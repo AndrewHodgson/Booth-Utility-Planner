@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import Cropper from 'react-easy-crop'
+import type { Area } from 'react-easy-crop'
 import {
   Download,
   Hand,
   Maximize2,
   MousePointer2,
-  PlugZap,
   RotateCcw,
   Trash2,
   Upload,
@@ -14,10 +15,13 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { jsPDF } from 'jspdf'
+import {
+  createCroppedImageDataUrl,
+  createFadedImageDataUrl,
+} from './utils/cropImage'
 import './App.css'
 
 type MarkerType =
-  | 'main_drop'
   | '120v'
   | '208v_single_phase'
   | '208v_three_phase'
@@ -33,9 +37,21 @@ type UtilityMarker = {
   amps?: '5A' | '10A' | '20A' | ''
   speed?: string
   is24Hour?: boolean
-  connectToMainDrop?: boolean
   notes?: string
 }
+
+type UtilityLine = {
+  id: string
+  fromMarkerId?: string   // set when line starts from a marker/drop
+  fromLineId?: string     // set when line starts from another line's endpoint
+  toX: number
+  toY: number
+  label?: string
+  notes?: string
+}
+
+const BOOTH_TYPES = ['Inline', 'Corner', 'Peninsula', 'End Cap', 'Island'] as const
+type BoothType = (typeof BOOTH_TYPES)[number]
 
 type BoothDetails = {
   name: string
@@ -48,6 +64,7 @@ type BoothDetails = {
   showLocation: string
   width: number
   depth: number
+  boothType: BoothType
   sideLabels: {
     front: string
     back: string
@@ -59,21 +76,54 @@ type BoothDetails = {
 type PlannerState = {
   booth: BoothDetails
   markers: UtilityMarker[]
+  lines: UtilityLine[]
   selectedTool: MarkerType
-  renderImage?: {
-    dataUrl: string
-    fileName: string
-    opacity: number
-  }
+  renderImage?: RenderImage
   hasCompletedSetup: boolean
+}
+
+type RenderImage = {
+  dataUrl: string
+  fileName: string
+  opacity: number
+  width: number
+  height: number
+  wasCropped: boolean
+}
+
+type RenderCropRequest = {
+  fileName: string
+  imageSrc: string
+  width: number
+  height: number
+  outputWidth: number
+  outputHeight: number
+  aspect: number
+  boothWidth: number
+  boothDepth: number
 }
 
 const STORAGE_KEY = 'sourceone-booth-utility-planner'
 const SNAP_FEET = 0.5
-const DEFAULT_TOOL: MarkerType = 'main_drop'
+const DEFAULT_TOOL: MarkerType = '120v'
 const MIN_ZOOM = 0.25
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.25
+const ASPECT_RATIO_TOLERANCE = 0.01
+const MAX_RENDER_UPLOAD_BYTES = 5 * 1024 * 1024
+const DEFAULT_RENDER_OPACITY = 0.32
+const MAX_RENDER_OUTPUT_EDGE = 1800
+const PDF_MARGIN = 32
+const PDF_FOOTER_BOTTOM_OFFSET = 20
+const PDF_SIDE_LABEL_FONT_SIZE = 8
+const PDF_SIDE_LABEL_GAP = 10
+const PDF_SIDE_LABEL_LINE_HEIGHT = PDF_SIDE_LABEL_FONT_SIZE
+const PDF_TABLE_HEADER_HEIGHT = 16
+const PDF_TABLE_ROW_MIN_HEIGHT = 17
+const PDF_TABLE_LINE_HEIGHT = 8
+const PDF_TABLE_BOTTOM_PADDING = 48
+const PDF_LOGO_MAX_WIDTH = 126
+const PDF_LOGO_MAX_HEIGHT = 38
 const dimensionOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 10)
 
 const markerOptions: Array<{
@@ -81,8 +131,7 @@ const markerOptions: Array<{
   label: string
   short: string
 }> = [
-  { type: 'main_drop', label: 'Main Drop', short: 'MD' },
-  { type: '120v', label: '120 V', short: '120' },
+  { type: '120v', label: '120 V', short: '120V' },
   { type: '208v_single_phase', label: '208 V Single Phase', short: '208 1P' },
   { type: '208v_three_phase', label: '208 V Three Phase', short: '208 3P' },
   { type: '480v_three_phase', label: '480 V Three Phase', short: '480 3P' },
@@ -90,7 +139,6 @@ const markerOptions: Array<{
 ]
 
 const markerColors: Record<MarkerType, string> = {
-  main_drop: '#111827',
   '120v': '#2563eb',
   '208v_single_phase': '#7c3aed',
   '208v_three_phase': '#f97316',
@@ -100,19 +148,24 @@ const markerColors: Record<MarkerType, string> = {
 
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
 
-function NestedShapeIcon({
+function NumberedShapeIcon({
   shape,
+  number,
   size,
 }: {
-  shape: 'triangle' | 'circle' | 'square' | 'octagon'
+  shape: 'triangle' | 'circle' | 'square' | 'diamond'
+  number?: number
   size: number
 }) {
-  const commonProps = {
+  const strokeProps = {
     fill: 'none',
     stroke: 'currentColor',
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
+    strokeWidth: '2' as const,
   }
+  // Triangle centroid sits at y≈14.3 in a 24×24 viewBox (apex y=3, base y=20)
+  const textY = shape === 'triangle' ? 14 : 12.5
 
   return (
     <svg
@@ -123,49 +176,64 @@ function NestedShapeIcon({
       focusable="false"
       className="nested-shape-icon"
     >
-      {shape === 'triangle' && (
-        <>
-          <path {...commonProps} strokeWidth="2" d="M12 3 21 20H3L12 3Z" />
-          <path {...commonProps} strokeWidth="1.8" d="M12 10.2 15.5 16.8H8.5L12 10.2Z" />
-        </>
-      )}
-      {shape === 'circle' && (
-        <>
-          <circle {...commonProps} strokeWidth="2" cx="12" cy="12" r="8.5" />
-          <circle {...commonProps} strokeWidth="1.8" cx="12" cy="12" r="4.5" />
-        </>
-      )}
-      {shape === 'square' && (
-        <>
-          <rect {...commonProps} strokeWidth="2" x="4" y="4" width="16" height="16" rx="1.5" />
-          <rect {...commonProps} strokeWidth="1.8" x="8" y="8" width="8" height="8" rx="1" />
-        </>
-      )}
-      {shape === 'octagon' && (
-        <>
-          <path {...commonProps} strokeWidth="2" d="M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5Z" />
-          <path {...commonProps} strokeWidth="1.8" d="M9.7 8h4.6l1.7 1.7v4.6L14.3 16H9.7L8 14.3V9.7L9.7 8Z" />
-        </>
+      {shape === 'triangle' && <path {...strokeProps} d="M12 3 21 20H3L12 3Z" />}
+      {shape === 'circle' && <circle {...strokeProps} cx="12" cy="12" r="8.5" />}
+      {shape === 'square' && <rect {...strokeProps} x="4" y="4" width="16" height="16" rx="1.5" />}
+      {shape === 'diamond' && <path {...strokeProps} d="M12 2 22 12 12 22 2 12Z" />}
+      {number !== undefined && (
+        <text
+          x="12"
+          y={textY}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="currentColor"
+          stroke="none"
+          fontSize={9}
+          fontWeight="900"
+          fontFamily="system-ui, sans-serif"
+        >
+          {number}
+        </text>
       )}
     </svg>
   )
 }
 
-function MarkerTypeIcon({ type, size = 15 }: { type: MarkerType; size?: number }) {
+function MarkerTypeIcon({ type, size = 15, number }: { type: MarkerType; size?: number; number?: number }) {
   switch (type) {
-    case 'main_drop':
-      return <PlugZap size={size} />
     case '120v':
-      return <NestedShapeIcon shape="triangle" size={size} />
+      return <NumberedShapeIcon shape="triangle" number={number} size={size} />
     case '208v_single_phase':
-      return <NestedShapeIcon shape="circle" size={size} />
+      return <NumberedShapeIcon shape="circle" number={number} size={size} />
     case '208v_three_phase':
-      return <NestedShapeIcon shape="square" size={size} />
+      return <NumberedShapeIcon shape="square" number={number} size={size} />
     case '480v_three_phase':
-      return <NestedShapeIcon shape="octagon" size={size} />
+      return <NumberedShapeIcon shape="diamond" number={number} size={size} />
     case 'wifi':
       return <Wifi size={size} />
   }
+}
+
+function LineToolIcon({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M5 17 19 7"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+      <circle cx="5" cy="17" r="2.5" fill="currentColor" />
+      <circle cx="19" cy="7" r="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
 }
 
 const defaultBooth: BoothDetails = {
@@ -179,6 +247,7 @@ const defaultBooth: BoothDetails = {
   showLocation: '',
   width: 20,
   depth: 20,
+  boothType: 'Inline',
   sideLabels: {
     front: '',
     back: '',
@@ -190,6 +259,7 @@ const defaultBooth: BoothDetails = {
 const defaultState: PlannerState = {
   booth: defaultBooth,
   markers: [],
+  lines: [],
   selectedTool: DEFAULT_TOOL,
   hasCompletedSetup: false,
 }
@@ -206,11 +276,87 @@ function formatFeet(value: number) {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1)
 }
 
-function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
-  if (type === 'main_drop') {
-    return 'MDL-1'
+function isSupportedRenderFile(file: File) {
+  return (
+    file.type === 'image/jpeg' ||
+    file.type === 'image/png' ||
+    /\.(jpe?g|png)$/i.test(file.name)
+  )
+}
+
+function readImageFile(file: File) {
+  return new Promise<{ imageSrc: string; width: number; height: number }>((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.addEventListener(
+      'load',
+      () => {
+        const image = new Image()
+
+        image.addEventListener(
+          'load',
+          () =>
+            resolve({
+              imageSrc: String(reader.result),
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            }),
+          { once: true },
+        )
+        image.addEventListener('error', reject, { once: true })
+        image.src = String(reader.result)
+      },
+      { once: true },
+    )
+    reader.addEventListener('error', reject, { once: true })
+    reader.readAsDataURL(file)
+  })
+}
+
+function getRenderOutputSize(booth: BoothDetails) {
+  const aspect = booth.width / booth.depth
+
+  if (aspect >= 1) {
+    return {
+      width: MAX_RENDER_OUTPUT_EDGE,
+      height: Math.max(1, Math.round(MAX_RENDER_OUTPUT_EDGE / aspect)),
+    }
   }
 
+  return {
+    width: Math.max(1, Math.round(MAX_RENDER_OUTPUT_EDGE * aspect)),
+    height: MAX_RENDER_OUTPUT_EDGE,
+  }
+}
+
+function sanitizeRenderImage(renderImage: unknown): RenderImage | undefined {
+  if (!renderImage || typeof renderImage !== 'object') {
+    return undefined
+  }
+
+  const candidate = renderImage as Partial<RenderImage>
+  if (
+    typeof candidate.dataUrl !== 'string' ||
+    !candidate.dataUrl.startsWith('data:image/') ||
+    typeof candidate.fileName !== 'string'
+  ) {
+    return undefined
+  }
+
+  const width = clamp(Number(candidate.width) || 1200, 1, 2400)
+  const height = clamp(Number(candidate.height) || 1200, 1, 2400)
+
+  return {
+    dataUrl: candidate.dataUrl,
+    fileName: candidate.fileName,
+    opacity: clamp(Number(candidate.opacity) || DEFAULT_RENDER_OPACITY, 0.05, 0.6),
+    width,
+    height,
+    wasCropped: Boolean(candidate.wasCropped),
+  }
+}
+
+function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
   if (type === 'wifi') {
     const count = markers.filter((marker) => marker.type === 'wifi').length + 1
     return `W${count}`
@@ -221,16 +367,20 @@ function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
 }
 
 function isElectrical(type: MarkerType) {
-  return type !== 'main_drop' && type !== 'wifi'
+  return type !== 'wifi'
 }
 
 function markerDisplay(type: MarkerType) {
   return markerOptions.find((option) => option.type === type) ?? markerOptions[0]
 }
 
+function formatAmps(amps: string | undefined): string {
+  return amps ? amps.replace(/A$/, 'AMP') : '-'
+}
+
 function markerValue(marker: UtilityMarker) {
   if (isElectrical(marker.type)) {
-    return marker.amps || '-'
+    return formatAmps(marker.amps)
   }
   if (marker.type === 'wifi') {
     return marker.speed || '-'
@@ -242,6 +392,61 @@ function markerLocation(marker: UtilityMarker) {
   return `${formatFeet(marker.x)}ft from left, ${formatFeet(marker.y)}ft from front`
 }
 
+// Shared edge logic used by the grid measurement guides and the selected-drop
+// details panel so they always report the same nearest edges/distances.
+function getEdgeDistances(x: number, y: number, booth: BoothDetails) {
+  const rightDistance = booth.width - x
+  const backDistance = booth.depth - y
+  const horizontalSide: 'left' | 'right' = x <= rightDistance ? 'left' : 'right'
+  const verticalSide: 'front' | 'back' = y <= backDistance ? 'front' : 'back'
+  return {
+    horizontalSide,
+    verticalSide,
+    horizontalDistance: horizontalSide === 'left' ? x : rightDistance,
+    verticalDistance: verticalSide === 'front' ? y : backDistance,
+  }
+}
+
+function lineLocation(line: UtilityLine) {
+  return `${formatFeet(line.toX)}ft from left, ${formatFeet(line.toY)}ft from front`
+}
+
+function getLineLabel(line: UtilityLine, index: number) {
+  return line.label?.trim() || `L${index + 1}`
+}
+
+function getLineStartCoords(
+  line: UtilityLine,
+  markers: UtilityMarker[],
+  lines: UtilityLine[],
+): { x: number; y: number } | null {
+  if (line.fromMarkerId) {
+    const marker = markers.find((m) => m.id === line.fromMarkerId)
+    return marker ? { x: marker.x, y: marker.y } : null
+  }
+  if (line.fromLineId) {
+    const source = lines.find((l) => l.id === line.fromLineId)
+    return source ? { x: source.toX, y: source.toY } : null
+  }
+  return null
+}
+
+function lineLengthFt(
+  line: UtilityLine,
+  markers: UtilityMarker[],
+  lines: UtilityLine[],
+): number | null {
+  const start = getLineStartCoords(line, markers, lines)
+  if (!start) return null
+  const dx = line.toX - start.x
+  const dy = line.toY - start.y
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+function getPdfMarkerId(markers: UtilityMarker[], marker: UtilityMarker) {
+  return String(markers.findIndex((candidate) => candidate.id === marker.id) + 1)
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const normalized = hex.replace('#', '')
   return [
@@ -249,6 +454,19 @@ function hexToRgb(hex: string): [number, number, number] {
     Number.parseInt(normalized.slice(2, 4), 16),
     Number.parseInt(normalized.slice(4, 6), 16),
   ]
+}
+
+function fitPdfImage(
+  imageWidth: number,
+  imageHeight: number,
+  maxWidth: number,
+  maxHeight: number,
+) {
+  const scale = Math.min(maxWidth / imageWidth, maxHeight / imageHeight)
+  return {
+    width: imageWidth * scale,
+    height: imageHeight * scale,
+  }
 }
 
 async function svgAssetToPngDataUrl(path: string) {
@@ -268,10 +486,14 @@ async function svgAssetToPngDataUrl(path: string) {
     canvas.height = Math.max(1, Math.round((image.height / image.width) * canvas.width))
     const context = canvas.getContext('2d')
     if (!context) {
-      return ''
+      return null
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/png')
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+    }
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -291,17 +513,74 @@ function markerPdfPoint(marker: UtilityMarker, booth: BoothDetails, grid: PdfGri
   }
 }
 
-function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayout) {
-  const { booth, markers, renderImage } = planner
-  const mainDrop = markers.find((marker) => marker.type === 'main_drop')
+function linePdfEndpoint(line: UtilityLine, booth: BoothDetails, grid: PdfGridLayout) {
+  return {
+    x: grid.x + (line.toX / booth.width) * grid.width,
+    y: grid.y + ((booth.depth - line.toY) / booth.depth) * grid.height,
+  }
+}
+
+function getPdfSideLabel(side: keyof BoothDetails['sideLabels'], booth: BoothDetails) {
+  const label = side.charAt(0).toUpperCase() + side.slice(1)
+  return `${label}: ${booth.sideLabels[side] || '-'}`
+}
+
+function drawPdfSideLabels(doc: jsPDF, booth: BoothDetails, grid: PdfGridLayout) {
+  doc.setTextColor(17, 24, 39)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(PDF_SIDE_LABEL_FONT_SIZE)
+
+  const labels = {
+    back: getPdfSideLabel('back', booth),
+    front: getPdfSideLabel('front', booth),
+    left: getPdfSideLabel('left', booth),
+    right: getPdfSideLabel('right', booth),
+  }
+  const measuredHeights = Object.values(labels).map((label) => {
+    const dimensions = doc.getTextDimensions(label, {
+      fontSize: PDF_SIDE_LABEL_FONT_SIZE,
+    })
+    return dimensions.h || PDF_SIDE_LABEL_LINE_HEIGHT
+  })
+  const labelHeight = Math.max(PDF_SIDE_LABEL_LINE_HEIGHT, ...measuredHeights)
+  const halfLabelHeight = labelHeight / 2
+  const textOptions = {
+    align: 'center' as const,
+    baseline: 'middle' as const,
+  }
+  const gridCenterX = grid.x + grid.width / 2
+  const gridCenterY = grid.y + grid.height / 2
+
+  doc.text(labels.back, gridCenterX, grid.y - PDF_SIDE_LABEL_GAP - halfLabelHeight, textOptions)
+  doc.text(
+    labels.front,
+    gridCenterX,
+    grid.y + grid.height + PDF_SIDE_LABEL_GAP + halfLabelHeight,
+    textOptions,
+  )
+  doc.text(labels.left, grid.x - PDF_SIDE_LABEL_GAP - halfLabelHeight, gridCenterY, {
+    ...textOptions,
+    angle: 90,
+  })
+  doc.text(labels.right, grid.x + grid.width + PDF_SIDE_LABEL_GAP + halfLabelHeight, gridCenterY, {
+    ...textOptions,
+    angle: 270,
+  })
+}
+
+async function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayout) {
+  const { booth, markers, lines, renderImage } = planner
 
   if (renderImage) {
-    const imageType = renderImage.dataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG'
-    doc.addImage(renderImage.dataUrl, imageType, grid.x, grid.y, grid.width, grid.height)
+    const fadedImage = await createFadedImageDataUrl(renderImage.dataUrl, renderImage.opacity, {
+      width: renderImage.width,
+      height: renderImage.height,
+    })
+    doc.addImage(fadedImage, 'JPEG', grid.x, grid.y, grid.width, grid.height)
   }
 
-  doc.setDrawColor(225, 231, 239)
-  doc.setLineWidth(0.25)
+  doc.setDrawColor(185, 185, 185)
+  doc.setLineWidth(0.35)
   for (let x = 0; x <= booth.width; x += 1) {
     const lineX = grid.x + (x / booth.width) * grid.width
     doc.line(lineX, grid.y, lineX, grid.y + grid.height)
@@ -312,27 +591,42 @@ function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayout) {
   }
 
   doc.setDrawColor(17, 24, 39)
-  doc.setLineWidth(1.4)
+  doc.setLineWidth(1.5)
   doc.rect(grid.x, grid.y, grid.width, grid.height)
 
-  if (mainDrop) {
-    const mainPoint = markerPdfPoint(mainDrop, booth, grid)
-    doc.setDrawColor(30, 41, 59)
+  lines.forEach((line, index) => {
+    const startCoords = getLineStartCoords(line, markers, lines)
+    if (!startCoords) {
+      return
+    }
+    const start = {
+      x: grid.x + (startCoords.x / booth.width) * grid.width,
+      y: grid.y + ((booth.depth - startCoords.y) / booth.depth) * grid.height,
+    }
+    const end = linePdfEndpoint(line, booth, grid)
+    doc.setDrawColor(33, 70, 112)
     doc.setLineWidth(1.4)
-    doc.setLineDashPattern([5, 4], 0)
-    markers
-      .filter(
-        (marker) =>
-          marker.type !== 'main_drop' &&
-          marker.id !== mainDrop.id &&
-          marker.connectToMainDrop !== false,
-      )
-      .forEach((marker) => {
-        const point = markerPdfPoint(marker, booth, grid)
-        doc.line(point.x, point.y, mainPoint.x, mainPoint.y)
-      })
-    doc.setLineDashPattern([], 0)
-  }
+    doc.line(start.x, start.y, end.x, end.y)
+
+    // Length label at midpoint
+    const len = lineLengthFt(line, markers, lines)
+    if (len !== null && len > 0) {
+      const midX = (start.x + end.x) / 2
+      const midY = (start.y + end.y) / 2
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(5.5)
+      doc.setTextColor(33, 70, 112)
+      doc.text(`${formatFeet(len)}ft`, midX, midY - 3, { align: 'center' })
+    }
+
+    // Endpoint circle + label
+    doc.setFillColor(33, 70, 112)
+    doc.circle(end.x, end.y, 3.5, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(5)
+    doc.setTextColor(255, 255, 255)
+    doc.text(getLineLabel(line, index), end.x, end.y + 1.8, { align: 'center' })
+  })
 
   markers.forEach((marker) => {
     const point = markerPdfPoint(marker, booth, grid)
@@ -373,46 +667,16 @@ function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayout) {
     doc.circle(point.x, point.y, 7, 'FD')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(5.8)
-    if (isElectrical(marker.type)) {
-      doc.text(marker.label || markerDisplay(marker.type).short, point.x, point.y - 1.5, {
-        align: 'center',
-      })
-      doc.setFontSize(4.8)
-      doc.text(marker.amps || '-', point.x, point.y + 4.6, {
-        align: 'center',
-      })
-    } else {
-      doc.text(marker.label || markerDisplay(marker.type).short, point.x, point.y + 2, {
-        align: 'center',
-      })
-    }
+    doc.setFontSize(7.2)
+    doc.text(getPdfMarkerId(markers, marker), point.x, point.y + 2.5, { align: 'center' })
   })
 
-  doc.setTextColor(17, 24, 39)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  const sideLabelOffset = 22
-  doc.text(`Back: ${booth.sideLabels.back || '-'}`, grid.x + grid.width / 2, grid.y - sideLabelOffset, {
-    align: 'center',
-  })
-  doc.text(`Front: ${booth.sideLabels.front || '-'}`, grid.x + grid.width / 2, grid.y + grid.height + sideLabelOffset, {
-    align: 'center',
-  })
-  doc.text(`Left: ${booth.sideLabels.left || '-'}`, grid.x - sideLabelOffset, grid.y + grid.height / 2, {
-    angle: 90,
-    align: 'center',
-  })
-  doc.text(`Right: ${booth.sideLabels.right || '-'}`, grid.x + grid.width + sideLabelOffset, grid.y + grid.height / 2, {
-    angle: 270,
-    align: 'center',
-  })
+  drawPdfSideLabels(doc, booth, grid)
 }
 
 function drawPdfFooter(doc: jsPDF) {
   const pageCount = doc.getNumberOfPages()
   const pageHeight = doc.internal.pageSize.getHeight()
-  const margin = 36
 
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page)
@@ -421,8 +685,8 @@ function drawPdfFooter(doc: jsPDF) {
     doc.setTextColor(75, 85, 99)
     doc.text(
       'Email: exhibitorservices@sourceoneevents.com | Phone: 708.344.3050 | Fax: 708.344.4111',
-      margin,
-      pageHeight - 24,
+      PDF_MARGIN,
+      pageHeight - PDF_FOOTER_BOTTOM_OFFSET,
     )
   }
 }
@@ -437,92 +701,167 @@ function drawLegend(doc: jsPDF, markers: UtilityMarker[], x: number, y: number) 
 
   doc.setTextColor(17, 24, 39)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
+  doc.setFontSize(9)
   doc.text('Legend', x, y)
 
   let cursorX = x
-  let cursorY = y + 16
+  let cursorY = y + 13
   presentTypes.forEach((option) => {
-    const itemWidth = Math.max(74, doc.getTextWidth(option.label) + 20)
+    const itemWidth = Math.max(68, doc.getTextWidth(option.label) + 18)
     if (cursorX + itemWidth > 560) {
       cursorX = x
-      cursorY += 15
+      cursorY += 13
     }
     const [r, g, b] = hexToRgb(markerColors[option.type])
     doc.setFillColor(r, g, b)
-    doc.circle(cursorX + 4, cursorY - 3, 4, 'F')
+    doc.circle(cursorX + 4, cursorY - 3, 3.5, 'F')
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(55, 65, 81)
-    doc.setFontSize(8)
+    doc.setFontSize(7.5)
     doc.text(option.label, cursorX + 12, cursorY)
     cursorX += itemWidth
   })
 
-  return cursorY + 14
+  return cursorY + 10
 }
 
 function drawDropTable(doc: jsPDF, planner: PlannerState, startY: number) {
-  const margin = 36
   const pageHeight = doc.internal.pageSize.getHeight()
   const columns = [
-    { label: 'ID', width: 42 },
-    { label: 'Type', width: 82 },
-    { label: 'Location', width: 118 },
+    { label: 'ID', width: 28 },
+    { label: 'Type', width: 112 },
+    { label: 'Location', width: 116 },
     { label: 'Amps / Speed', width: 64 },
     { label: '24 Hour', width: 48 },
-    { label: 'Connected', width: 60 },
-    { label: 'Notes', width: 126 },
+    { label: 'Notes', width: 172 },
   ]
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0)
   let y = startY
 
   function drawHeader() {
     doc.setFillColor(33, 70, 112)
-    doc.rect(margin, y, tableWidth, 18, 'F')
+    doc.rect(PDF_MARGIN, y, tableWidth, PDF_TABLE_HEADER_HEIGHT, 'F')
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
+    doc.setFontSize(7)
     doc.setTextColor(255, 255, 255)
-    let x = margin
+    let x = PDF_MARGIN
     columns.forEach((column) => {
-      doc.text(column.label, x + 4, y + 12)
+      doc.text(column.label, x + 4, y + 11)
       x += column.width
     })
-    y += 18
+    y += PDF_TABLE_HEADER_HEIGHT
   }
 
   drawHeader()
 
   planner.markers.forEach((marker, index) => {
     const cells = [
-      marker.label || '-',
+      getPdfMarkerId(planner.markers, marker),
       markerDisplay(marker.type).label,
       markerLocation(marker),
       markerValue(marker),
       isElectrical(marker.type) ? (marker.is24Hour ? 'Yes' : 'No') : '-',
-      marker.type === 'main_drop' ? '-' : marker.connectToMainDrop === false ? 'No' : 'Yes',
       marker.notes?.trim() || '-',
     ]
     const cellLines = cells.map((cell, cellIndex) =>
       doc.splitTextToSize(cell, columns[cellIndex].width - 8),
     )
-    const rowHeight = Math.max(20, Math.max(...cellLines.map((lines) => lines.length)) * 9 + 8)
+    const rowHeight = Math.max(
+      PDF_TABLE_ROW_MIN_HEIGHT,
+      Math.max(...cellLines.map((lines) => lines.length)) * PDF_TABLE_LINE_HEIGHT + 6,
+    )
 
-    if (y + rowHeight > pageHeight - 62) {
+    if (y + rowHeight > pageHeight - PDF_TABLE_BOTTOM_PADDING) {
       doc.addPage()
-      y = margin
+      y = PDF_MARGIN
       drawHeader()
     }
 
     doc.setFillColor(index % 2 === 0 ? 248 : 255, index % 2 === 0 ? 250 : 255, index % 2 === 0 ? 252 : 255)
-    doc.rect(margin, y, tableWidth, rowHeight, 'F')
+    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight, 'F')
     doc.setDrawColor(226, 232, 240)
-    doc.rect(margin, y, tableWidth, rowHeight)
+    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight)
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
+    doc.setFontSize(6.8)
     doc.setTextColor(31, 41, 55)
-    let x = margin
+    let x = PDF_MARGIN
     cellLines.forEach((lines, cellIndex) => {
-      doc.text(lines, x + 4, y + 11)
+      doc.text(lines, x + 4, y + 10)
+      x += columns[cellIndex].width
+    })
+    y += rowHeight
+  })
+
+  return y
+}
+
+function drawLineTable(doc: jsPDF, planner: PlannerState, startY: number) {
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const columns = [
+    { label: 'ID', width: 52 },
+    { label: 'Connected Drop', width: 102 },
+    { label: 'End Location', width: 174 },
+    { label: 'Notes', width: 212 },
+  ]
+  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0)
+  let y = startY
+
+  function drawHeader() {
+    doc.setFillColor(33, 70, 112)
+    doc.rect(PDF_MARGIN, y, tableWidth, PDF_TABLE_HEADER_HEIGHT, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(255, 255, 255)
+    let x = PDF_MARGIN
+    columns.forEach((column) => {
+      doc.text(column.label, x + 4, y + 11)
+      x += column.width
+    })
+    y += PDF_TABLE_HEADER_HEIGHT
+  }
+
+  drawHeader()
+
+  planner.lines.forEach((line, index) => {
+    let sourceLabel = '-'
+    if (line.fromMarkerId) {
+      const fromMarker = planner.markers.find((m) => m.id === line.fromMarkerId)
+      sourceLabel = fromMarker?.label || '-'
+    } else if (line.fromLineId) {
+      const fromLine = planner.lines.find((l) => l.id === line.fromLineId)
+      const fromLineIndex = planner.lines.findIndex((l) => l.id === line.fromLineId)
+      sourceLabel = fromLine ? getLineLabel(fromLine, fromLineIndex) : '-'
+    }
+    const cells = [
+      getLineLabel(line, index),
+      sourceLabel,
+      lineLocation(line),
+      line.notes?.trim() || '-',
+    ]
+    const cellLines = cells.map((cell, cellIndex) =>
+      doc.splitTextToSize(cell, columns[cellIndex].width - 8),
+    )
+    const rowHeight = Math.max(
+      PDF_TABLE_ROW_MIN_HEIGHT,
+      Math.max(...cellLines.map((lines) => lines.length)) * PDF_TABLE_LINE_HEIGHT + 6,
+    )
+
+    if (y + rowHeight > pageHeight - PDF_TABLE_BOTTOM_PADDING) {
+      doc.addPage()
+      y = PDF_MARGIN
+      drawHeader()
+    }
+
+    doc.setFillColor(index % 2 === 0 ? 248 : 255, index % 2 === 0 ? 250 : 255, index % 2 === 0 ? 252 : 255)
+    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight, 'F')
+    doc.setDrawColor(226, 232, 240)
+    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.8)
+    doc.setTextColor(31, 41, 55)
+    let x = PDF_MARGIN
+    cellLines.forEach((lines, cellIndex) => {
+      doc.text(lines, x + 4, y + 10)
       x += columns[cellIndex].width
     })
     y += rowHeight
@@ -535,37 +874,40 @@ async function exportPlannerPdf(planner: PlannerState) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
-  const margin = 36
-  const logoDataUrl = await svgAssetToPngDataUrl(sourceOneLogoPath)
+  const logoImage = await svgAssetToPngDataUrl(sourceOneLogoPath)
 
-  if (logoDataUrl) {
-    doc.addImage(logoDataUrl, 'PNG', margin, 30, 150, 45)
+  if (logoImage) {
+    const logoSize = fitPdfImage(
+      logoImage.width,
+      logoImage.height,
+      PDF_LOGO_MAX_WIDTH,
+      PDF_LOGO_MAX_HEIGHT,
+    )
+    doc.addImage(logoImage.dataUrl, 'PNG', PDF_MARGIN, 24, logoSize.width, logoSize.height)
   }
 
   doc.setTextColor(17, 24, 39)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
-  doc.text('Booth Utility Planner', margin, 94)
+  doc.setFontSize(16)
+  doc.text('Booth Utility Planner', PDF_MARGIN, 78)
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.setFontSize(8.5)
   doc.text(
     `Show: ${planner.booth.showName || '-'} | Location: ${planner.booth.showLocation || '-'} | Date: ${
       planner.booth.showDate || '-'
     }`,
-    margin,
-    114,
+    PDF_MARGIN,
+    96,
   )
   doc.text(
-    `Booth #: ${planner.booth.boothNumber || '-'} | Booth Size: ${planner.booth.width}ft x ${
-      planner.booth.depth
-    }ft`,
-    margin,
-    128,
+    `Booth #: ${planner.booth.boothNumber || '-'} | Booth Size: ${planner.booth.width}ft x ${planner.booth.depth}ft | Booth Type: ${planner.booth.boothType || '-'}`,
+    PDF_MARGIN,
+    109,
   )
 
-  const gridMaxWidth = pageWidth - margin * 2 - 70
-  const gridMaxHeight = 300
+  const gridMaxWidth = pageWidth - PDF_MARGIN * 2 - 52
+  const gridMaxHeight = 276
   const gridScale = Math.min(
     gridMaxWidth / planner.booth.width,
     gridMaxHeight / planner.booth.depth,
@@ -573,21 +915,34 @@ async function exportPlannerPdf(planner: PlannerState) {
   const grid = {
     width: planner.booth.width * gridScale,
     height: planner.booth.depth * gridScale,
-    x: margin + 35 + (gridMaxWidth - planner.booth.width * gridScale) / 2,
-    y: 198,
+    x: PDF_MARGIN + 26 + (gridMaxWidth - planner.booth.width * gridScale) / 2,
+    y: 156,
   }
 
-  drawPdfGrid(doc, planner, grid)
-  let y = grid.y + grid.height + 58
-  y = drawLegend(doc, planner.markers, margin, y)
-  y += 12
+  await drawPdfGrid(doc, planner, grid)
+  let y = grid.y + grid.height + 36
+  y = drawLegend(doc, planner.markers, PDF_MARGIN, y)
+  y += 8
   doc.setTextColor(17, 24, 39)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.text('Drop Details', margin, y)
-  y = drawDropTable(doc, planner, y + 10)
+  doc.setFontSize(9)
+  doc.text('Drop Details', PDF_MARGIN, y)
+  y = drawDropTable(doc, planner, y + 8)
 
-  if (y > pageHeight - 66) {
+  if (planner.lines.length > 0) {
+    y += 12
+    if (y > pageHeight - 72) {
+      doc.addPage()
+      y = PDF_MARGIN
+    }
+    doc.setTextColor(17, 24, 39)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.text('Line Details', PDF_MARGIN, y)
+    y = drawLineTable(doc, planner, y + 8)
+  }
+
+  if (y > pageHeight - PDF_TABLE_BOTTOM_PADDING) {
     doc.addPage()
   }
 
@@ -607,6 +962,48 @@ function readInitialState(): PlannerState {
     }
 
     const parsed = JSON.parse(raw) as Partial<PlannerState>
+    const markers = Array.isArray(parsed.markers)
+      ? parsed.markers
+          .map((marker) => {
+            const legacyType = marker.type as string
+            const migratedType: MarkerType = legacyType === 'main_drop' ? '120v' : (legacyType as MarkerType)
+            if (!markerOptions.some((option) => option.type === migratedType)) {
+              return null
+            }
+            return {
+              ...marker,
+              type: migratedType,
+              amps: isElectrical(migratedType) ? marker.amps || '10A' : undefined,
+              speed: migratedType === 'wifi' ? marker.speed || 'Standard' : undefined,
+              is24Hour: isElectrical(migratedType) ? Boolean(marker.is24Hour) : false,
+              notes: marker.notes || '',
+            } as UtilityMarker
+          })
+          .filter((marker): marker is UtilityMarker => Boolean(marker))
+      : []
+    const markerIds = new Set(markers.map((marker) => marker.id))
+    const parsedLines: Array<Record<string, unknown>> = Array.isArray(parsed.lines) ? parsed.lines : []
+    const parsedLineIds = new Set(parsedLines.map((l) => l.id as string).filter(Boolean))
+    const lines: UtilityLine[] = parsedLines
+      .filter((line) => {
+        if (line.fromMarkerId) return markerIds.has(line.fromMarkerId as string)
+        if (line.fromLineId) return parsedLineIds.has(line.fromLineId as string)
+        return false
+      })
+      .map((line, index) => ({
+        id: (line.id as string) || crypto.randomUUID(),
+        ...(line.fromMarkerId
+          ? { fromMarkerId: line.fromMarkerId as string }
+          : { fromLineId: line.fromLineId as string }),
+        toX: clamp(Number(line.toX) || 0, 0, parsed.booth?.width || 20),
+        toY: clamp(Number(line.toY) || 0, 0, parsed.booth?.depth || 20),
+        label: (line.label as string) || `L${index + 1}`,
+        notes: (line.notes as string) || '',
+      }))
+    const parsedTool = parsed.selectedTool
+    const selectedTool: MarkerType = parsedTool && markerOptions.some((option) => option.type === parsedTool)
+      ? parsedTool
+      : DEFAULT_TOOL
     return {
       booth: {
         ...defaultBooth,
@@ -617,18 +1014,14 @@ function readInitialState(): PlannerState {
         },
         width: clamp(Number(parsed.booth?.width) || 20, 1, 100),
         depth: clamp(Number(parsed.booth?.depth) || 20, 1, 100),
+        boothType: BOOTH_TYPES.includes(parsed.booth?.boothType as BoothType)
+          ? (parsed.booth?.boothType as BoothType)
+          : 'Inline',
       },
-      markers: Array.isArray(parsed.markers)
-        ? parsed.markers.map((marker) => ({
-            ...marker,
-            connectToMainDrop:
-              typeof marker.connectToMainDrop === 'boolean'
-                ? marker.connectToMainDrop
-                : marker.type !== 'main_drop',
-          }))
-        : [],
-      selectedTool: parsed.selectedTool ?? DEFAULT_TOOL,
-      renderImage: parsed.renderImage,
+      markers,
+      lines,
+      selectedTool,
+      renderImage: sanitizeRenderImage(parsed.renderImage),
       hasCompletedSetup: Boolean(parsed.hasCompletedSetup),
     }
   } catch {
@@ -727,6 +1120,15 @@ function SetupModal({
             onModeChange={(mode) => updateDimension('depth', mode)}
             onValueChange={(value) => updateField('depth', value)}
           />
+          <label className="field-group">
+            <span className="field-label">Booth Type</span>
+            <select
+              value={booth.boothType}
+              onChange={(event) => updateField('boothType', event.target.value as BoothType)}
+            >
+              {BOOTH_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </label>
         </div>
 
         <div className="modal-actions">
@@ -778,6 +1180,110 @@ function DimensionField({
   )
 }
 
+function RenderCropModal({
+  cropRequest,
+  onApply,
+  onCancel,
+}: {
+  cropRequest: RenderCropRequest
+  onApply: (dataUrl: string) => void
+  onCancel: () => void
+}) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
+  const [isApplying, setIsApplying] = useState(false)
+  const [error, setError] = useState('')
+
+  async function applyCrop() {
+    if (!croppedAreaPixels) {
+      return
+    }
+
+    setIsApplying(true)
+    setError('')
+
+    try {
+      const dataUrl = await createCroppedImageDataUrl(
+        cropRequest.imageSrc,
+        croppedAreaPixels,
+        {
+          width: cropRequest.outputWidth,
+          height: cropRequest.outputHeight,
+        },
+      )
+
+      onApply(dataUrl)
+    } catch {
+      setError('Unable to crop that image. Please try a different file.')
+    } finally {
+      setIsApplying(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop crop-modal-backdrop" role="presentation">
+      <section
+        className="crop-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="crop-modal-title"
+      >
+        <div className="modal-heading crop-modal-heading">
+          <p className="eyebrow">Booth Image Upload</p>
+          <h1 id="crop-modal-title">Crop background image</h1>
+          <p>
+            Reposition and zoom your image to fit the current {cropRequest.boothWidth} ft x{' '}
+            {cropRequest.boothDepth} ft booth grid.
+          </p>
+        </div>
+
+        <div className="crop-stage">
+          <Cropper
+            image={cropRequest.imageSrc}
+            crop={crop}
+            zoom={zoom}
+            aspect={cropRequest.aspect}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={(_, nextCroppedAreaPixels) =>
+              setCroppedAreaPixels(nextCroppedAreaPixels)
+            }
+          />
+        </div>
+
+        <label className="zoom-control">
+          <span>Zoom</span>
+          <input
+            type="range"
+            min="1"
+            max="3"
+            step="0.01"
+            value={zoom}
+            onChange={(event) => setZoom(Number(event.target.value))}
+          />
+        </label>
+
+        {error && <p className="upload-error">{error}</p>}
+
+        <div className="modal-actions crop-modal-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={applyCrop}
+            disabled={isApplying || !croppedAreaPixels}
+          >
+            {isApplying ? 'Applying...' : 'Apply Crop'}
+          </button>
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function TextField({
   label,
   value,
@@ -800,13 +1306,20 @@ function TextField({
 function App() {
   const [planner, setPlanner] = useState<PlannerState>(() => readInitialState())
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const [cropRequest, setCropRequest] = useState<RenderCropRequest | null>(null)
   const [stageSize, setStageSize] = useState({ width: 900, height: 680 })
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isPanMode, setIsPanMode] = useState(false)
   const [isPointerMode, setIsPointerMode] = useState(false)
+  const [isLineMode, setIsLineMode] = useState(false)
+  const [lineStartMarkerId, setLineStartMarkerId] = useState<string | null>(null)
+  const [lineStartLineId, setLineStartLineId] = useState<string | null>(null)
+  const [draggingLineEndId, setDraggingLineEndId] = useState<string | null>(null)
   const [openPanelSectionId, setOpenPanelSectionId] = useState<string | null>(null)
   const [ampPromptMarkerId, setAmpPromptMarkerId] = useState<string | null>(null)
   const [panStart, setPanStart] = useState<{
@@ -818,8 +1331,7 @@ function App() {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const gridRef = useRef<HTMLDivElement | null>(null)
   const selectedMarker = planner.markers.find((marker) => marker.id === selectedMarkerId)
-  const mainDrop = planner.markers.find((marker) => marker.type === 'main_drop')
-  const mainDropPlaced = planner.markers.some((marker) => marker.type === 'main_drop')
+  const selectedLine = planner.lines.find((line) => line.id === selectedLineId)
 
   const gridMetrics = useMemo(() => {
     const maxCell = 64
@@ -900,18 +1412,24 @@ function App() {
 
   useEffect(() => {
     function moveSelected(event: PointerEvent) {
-      if (!draggingId) {
+      if (!draggingId && !draggingLineEndId) {
         return
       }
       const coords = getGridCoords(event.clientX, event.clientY)
       if (!coords) {
         return
       }
-      updateMarker(draggingId, coords)
+      if (draggingId) {
+        updateMarker(draggingId, coords)
+      }
+      if (draggingLineEndId) {
+        updateLine(draggingLineEndId, { toX: coords.x, toY: coords.y })
+      }
     }
 
     function stopDragging() {
       setDraggingId(null)
+      setDraggingLineEndId(null)
     }
 
     window.addEventListener('pointermove', moveSelected)
@@ -920,7 +1438,7 @@ function App() {
       window.removeEventListener('pointermove', moveSelected)
       window.removeEventListener('pointerup', stopDragging)
     }
-  }, [draggingId, getGridCoords])
+  }, [draggingId, draggingLineEndId, getGridCoords])
 
   function setBooth(booth: BoothDetails) {
     const nextBooth = {
@@ -936,6 +1454,11 @@ function App() {
         x: clamp(marker.x, 0, nextBooth.width),
         y: clamp(marker.y, 0, nextBooth.depth),
       })),
+      lines: current.lines.map((line) => ({
+        ...line,
+        toX: clamp(line.toX, 0, nextBooth.width),
+        toY: clamp(line.toY, 0, nextBooth.depth),
+      })),
     }))
   }
 
@@ -948,30 +1471,48 @@ function App() {
     }))
   }
 
-  function deleteMarker(id: string) {
+  function updateLine(id: string, patch: Partial<UtilityLine>) {
     setPlanner((current) => ({
       ...current,
-      markers: current.markers.filter((marker) => marker.id !== id),
+      lines: current.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)),
     }))
+  }
+
+  function deleteMarker(id: string) {
+    setPlanner((current) => {
+      const directlyRemovedIds = new Set(
+        current.lines.filter((l) => l.fromMarkerId === id).map((l) => l.id),
+      )
+      const filteredLines = current.lines.filter(
+        (l) => l.fromMarkerId !== id && (!l.fromLineId || !directlyRemovedIds.has(l.fromLineId)),
+      )
+      return {
+        ...current,
+        markers: current.markers.filter((marker) => marker.id !== id),
+        lines: filteredLines,
+      }
+    })
     setSelectedMarkerId(null)
+    setSelectedLineId((current) =>
+      planner.lines.some((line) => line.id === current && line.fromMarkerId === id) ? null : current,
+    )
     setAmpPromptMarkerId(null)
   }
 
+  function deleteLine(id: string) {
+    setPlanner((current) => ({
+      ...current,
+      lines: current.lines.filter((line) => line.id !== id && line.fromLineId !== id),
+    }))
+    setSelectedLineId(null)
+  }
+
   function placeMarker(clientX: number, clientY: number) {
-    if (isPanMode || isPointerMode) {
+    if (isPanMode || isPointerMode || isLineMode) {
       return
     }
     const coords = getGridCoords(clientX, clientY)
     if (!coords) {
-      return
-    }
-
-    if (
-      planner.selectedTool === 'main_drop' &&
-      planner.markers.some((marker) => marker.type === 'main_drop')
-    ) {
-      const mainDrop = planner.markers.find((marker) => marker.type === 'main_drop')
-      setSelectedMarkerId(mainDrop?.id ?? null)
       return
     }
 
@@ -984,14 +1525,40 @@ function App() {
       amps: isElectrical(planner.selectedTool) ? '10A' : undefined,
       speed: planner.selectedTool === 'wifi' ? 'Standard' : undefined,
       is24Hour: false,
-      connectToMainDrop: planner.selectedTool !== 'main_drop',
       notes: '',
     }
 
     setPlanner((current) => ({ ...current, markers: [...current.markers, nextMarker] }))
     setSelectedMarkerId(nextMarker.id)
-    setOpenPanelSectionId('selected-drop')
+    setSelectedLineId(null)
+    setOpenPanelSectionId('selected-item')
     setAmpPromptMarkerId(isElectrical(nextMarker.type) ? nextMarker.id : null)
+  }
+
+  function completeLine(clientX: number, clientY: number) {
+    if (!lineStartMarkerId && !lineStartLineId) {
+      return
+    }
+    const coords = getGridCoords(clientX, clientY)
+    if (!coords) {
+      return
+    }
+    const nextLine: UtilityLine = {
+      id: crypto.randomUUID(),
+      ...(lineStartMarkerId ? { fromMarkerId: lineStartMarkerId } : { fromLineId: lineStartLineId! }),
+      toX: coords.x,
+      toY: coords.y,
+      label: `L${planner.lines.length + 1}`,
+      notes: '',
+    }
+    setPlanner((current) => ({ ...current, lines: [...current.lines, nextLine] }))
+    setSelectedMarkerId(null)
+    setSelectedLineId(nextLine.id)
+    setLineStartMarkerId(null)
+    setLineStartLineId(null)
+    setIsLineMode(false)
+    setIsPointerMode(true)
+    setOpenPanelSectionId('selected-item')
   }
 
   function markerPosition(marker: UtilityMarker, index: number) {
@@ -1011,34 +1578,123 @@ function App() {
     }
   }
 
-  function handleRenderUpload(file: File | undefined) {
+  async function handleRenderUpload(file: File | undefined) {
     if (!file) {
       return
     }
-    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setExportStatus('Upload must be a PNG or JPG under 5MB.')
+
+    if (!isSupportedRenderFile(file)) {
+      setUploadError('Please upload a JPG or PNG file.')
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      setPlanner((current) => ({
-        ...current,
-        renderImage: {
-          dataUrl: String(reader.result),
-          fileName: file.name,
-          opacity: current.renderImage?.opacity ?? 0.28,
-        },
-      }))
-      setExportStatus('')
+    if (file.size > MAX_RENDER_UPLOAD_BYTES) {
+      setUploadError('File is too large. JPG and PNG uploads must be 5 MB or smaller.')
+      return
     }
-    reader.readAsDataURL(file)
+
+    let imageDetails: Awaited<ReturnType<typeof readImageFile>>
+
+    try {
+      imageDetails = await readImageFile(file)
+    } catch {
+      setUploadError('Unable to read that JPG or PNG. Please choose a different file.')
+      return
+    }
+
+    const outputSize = getRenderOutputSize(planner.booth)
+    const requiredRatio = planner.booth.width / planner.booth.depth
+    const imageRatio = imageDetails.width / imageDetails.height
+    const ratioMatches =
+      Math.abs(imageRatio - requiredRatio) / requiredRatio <= ASPECT_RATIO_TOLERANCE
+
+    if (ratioMatches) {
+      try {
+        const dataUrl = await createCroppedImageDataUrl(
+          imageDetails.imageSrc,
+          {
+            x: 0,
+            y: 0,
+            width: imageDetails.width,
+            height: imageDetails.height,
+          },
+          outputSize,
+        )
+        setPlanner((current) => ({
+          ...current,
+          renderImage: {
+            dataUrl,
+            fileName: file.name,
+            opacity: current.renderImage?.opacity ?? DEFAULT_RENDER_OPACITY,
+            width: outputSize.width,
+            height: outputSize.height,
+            wasCropped: false,
+          },
+        }))
+        setUploadError('')
+        setCropRequest(null)
+      } catch {
+        setUploadError('Unable to prepare that image. Please choose a different file.')
+      }
+      return
+    }
+
+    setCropRequest({
+      fileName: file.name,
+      imageSrc: imageDetails.imageSrc,
+      width: imageDetails.width,
+      height: imageDetails.height,
+      outputWidth: outputSize.width,
+      outputHeight: outputSize.height,
+      aspect: requiredRatio,
+      boothWidth: planner.booth.width,
+      boothDepth: planner.booth.depth,
+    })
+    setUploadError('')
+  }
+
+  function applyCroppedRender(dataUrl: string) {
+    if (!cropRequest) {
+      return
+    }
+
+    setPlanner((current) => ({
+      ...current,
+      renderImage: {
+        dataUrl,
+        fileName: cropRequest.fileName,
+        opacity: current.renderImage?.opacity ?? DEFAULT_RENDER_OPACITY,
+        width: cropRequest.outputWidth,
+        height: cropRequest.outputHeight,
+        wasCropped: true,
+      },
+    }))
+    setUploadError('')
+    setCropRequest(null)
+  }
+
+  function removeRenderImage() {
+    setPlanner((current) => ({ ...current, renderImage: undefined }))
+    setUploadError('')
+    setCropRequest(null)
   }
 
   function resetPlanner() {
     setPlanner(defaultState)
     setSelectedMarkerId(null)
+    setSelectedLineId(null)
+    setDraggingId(null)
+    setDraggingLineEndId(null)
+    setLineStartMarkerId(null)
+    setLineStartLineId(null)
+    setIsPanMode(false)
+    setIsPointerMode(false)
+    setIsLineMode(false)
+    setZoom(1)
+    setPanOffset({ x: 0, y: 0 })
     setExportStatus('')
+    setUploadError('')
+    setCropRequest(null)
   }
 
   function startPan(event: ReactPointerEvent) {
@@ -1061,14 +1717,26 @@ function App() {
   function selectTool(selectedTool: MarkerType) {
     setIsPanMode(false)
     setIsPointerMode(false)
+    setIsLineMode(false)
+    setLineStartMarkerId(null)
+    setLineStartLineId(null)
+    setDraggingLineEndId(null)
     setPlanner((current) => ({ ...current, selectedTool }))
+  }
+
+  function selectLineTool() {
+    setDraggingId(null)
+    setDraggingLineEndId(null)
+    setIsPanMode(false)
+    setIsPointerMode(false)
+    setIsLineMode(true)
+    setLineStartMarkerId(null)
+    setLineStartLineId(null)
   }
 
   async function handleExportPdf() {
     if (planner.markers.length === 0) {
       window.alert('No drops have been placed yet. The PDF will export an empty booth layout.')
-    } else if (!mainDropPlaced) {
-      window.alert('A Main Drop should be placed before exporting.')
     }
 
     setExportStatus('Generating PDF...')
@@ -1105,11 +1773,6 @@ function App() {
           ref={stageRef}
           onPointerDown={startPan}
         >
-          {!mainDropPlaced && (
-            <p className="instruction-note">
-              Place the Main Drop Location first, then add electrical and WiFi drops as needed.
-            </p>
-          )}
           <div
             ref={gridRef}
             className="booth-grid"
@@ -1126,7 +1789,11 @@ function App() {
                 return
               }
               if (event.target === event.currentTarget) {
-                placeMarker(event.clientX, event.clientY)
+                if (isLineMode) {
+                  completeLine(event.clientX, event.clientY)
+                } else {
+                  placeMarker(event.clientX, event.clientY)
+                }
               }
             }}
           >
@@ -1143,29 +1810,43 @@ function App() {
             )}
             <div className="grid-measure grid-measure-width">{planner.booth.width} ft</div>
             <div className="grid-measure grid-measure-depth">{planner.booth.depth} ft</div>
-            {mainDrop && (
-              <MainDropConnections
-                booth={planner.booth}
-                mainDrop={mainDrop}
-                markers={planner.markers}
-              />
-            )}
-            <div className="side-label side-label-back">
-              <strong>Back</strong>
-              <span>{planner.booth.sideLabels.back || 'Back side label'}</span>
-            </div>
-            <div className="side-label side-label-front">
-              <strong>Front</strong>
-              <span>{planner.booth.sideLabels.front || 'Front side label'}</span>
-            </div>
-            <div className="side-label side-label-left">
-              <strong>Left</strong>
-              <span>{planner.booth.sideLabels.left || 'Left side label'}</span>
-            </div>
-            <div className="side-label side-label-right">
-              <strong>Right</strong>
-              <span>{planner.booth.sideLabels.right || 'Right side label'}</span>
-            </div>
+            <UtilityLineLayer
+              booth={planner.booth}
+              markers={planner.markers}
+              lines={planner.lines}
+              selectedLineId={selectedLineId}
+              onSelectLine={(lineId) => {
+                setSelectedLineId(lineId)
+                setSelectedMarkerId(null)
+                setLineStartMarkerId(null)
+                setAmpPromptMarkerId(null)
+                setOpenPanelSectionId('selected-item')
+              }}
+            />
+            <SideLabel
+              side="back"
+              value={planner.booth.sideLabels.back}
+              className="side-label-back"
+              onChange={(value) => setBooth({ ...planner.booth, sideLabels: { ...planner.booth.sideLabels, back: value } })}
+            />
+            <SideLabel
+              side="front"
+              value={planner.booth.sideLabels.front}
+              className="side-label-front"
+              onChange={(value) => setBooth({ ...planner.booth, sideLabels: { ...planner.booth.sideLabels, front: value } })}
+            />
+            <SideLabel
+              side="left"
+              value={planner.booth.sideLabels.left}
+              className="side-label-left"
+              onChange={(value) => setBooth({ ...planner.booth, sideLabels: { ...planner.booth.sideLabels, left: value } })}
+            />
+            <SideLabel
+              side="right"
+              value={planner.booth.sideLabels.right}
+              className="side-label-right"
+              onChange={(value) => setBooth({ ...planner.booth, sideLabels: { ...planner.booth.sideLabels, right: value } })}
+            />
             {planner.markers.map((marker) => (
               <MeasurementGuides
                 key={`guides-${marker.id}`}
@@ -1190,20 +1871,103 @@ function App() {
                       startPan(event)
                       return
                     }
+                    if (isLineMode) {
+                      setLineStartMarkerId(marker.id)
+                      setSelectedMarkerId(marker.id)
+                      setSelectedLineId(null)
+                      setAmpPromptMarkerId(null)
+                      setOpenPanelSectionId('selected-item')
+                      return
+                    }
                     setSelectedMarkerId(marker.id)
-                    setOpenPanelSectionId('selected-drop')
+                    setSelectedLineId(null)
+                    setOpenPanelSectionId('selected-item')
                     setAmpPromptMarkerId(null)
                     setDraggingId(marker.id)
                   }}
                 >
-                  <MarkerTypeIcon type={marker.type} size={15} />
+                  <MarkerTypeIcon
+                    type={marker.type}
+                    size={15}
+                    number={isElectrical(marker.type)
+                      ? planner.markers.filter((m) => m.type === marker.type).findIndex((m) => m.id === marker.id) + 1
+                      : undefined}
+                  />
                   <span className="marker-copy">
-                    <span className="marker-label">{marker.label || display.short}</span>
+                    <span className="marker-label">{display.short}</span>
                     {isElectrical(marker.type) && marker.amps && (
-                      <span className="marker-amps">{marker.amps}</span>
+                      <span className="marker-amps">{marker.amps.replace(/A$/, 'AMP')}</span>
+                    )}
+                    {isElectrical(marker.type) && marker.is24Hour && (
+                      <span className="marker-24hr">24HR</span>
+                    )}
+                    {marker.type === 'wifi' && marker.speed && (
+                      <span className="marker-amps">{marker.speed}</span>
                     )}
                   </span>
                 </button>
+              )
+            })}
+            {isLineMode && (
+              <div className="line-start-hint" aria-live="polite">
+                {lineStartMarkerId || lineStartLineId
+                  ? 'Click a grid point to finish the line.'
+                  : 'Click a drop or line endpoint to start the line.'}
+              </div>
+            )}
+            {planner.lines.map((line, index) => {
+              const startCoords = getLineStartCoords(line, planner.markers, planner.lines)
+              const len = startCoords
+                ? Math.sqrt((line.toX - startCoords.x) ** 2 + (line.toY - startCoords.y) ** 2)
+                : null
+              const endLeftPct = (line.toX / planner.booth.width) * 100
+              const endTopPct = ((planner.booth.depth - line.toY) / planner.booth.depth) * 100
+              const midLeftPct = startCoords
+                ? ((startCoords.x / planner.booth.width + line.toX / planner.booth.width) / 2) * 100
+                : endLeftPct
+              const midTopPct = startCoords
+                ? (((planner.booth.depth - startCoords.y) / planner.booth.depth + (planner.booth.depth - line.toY) / planner.booth.depth) / 2) * 100
+                : endTopPct
+              const isThisLineStart = lineStartLineId === line.id
+              return (
+                <React.Fragment key={`ep-${line.id}`}>
+                  {len !== null && len > 0 && (
+                    <div
+                      className="line-length-label"
+                      style={{ left: `${midLeftPct}%`, top: `${midTopPct}%` }}
+                      aria-hidden="true"
+                    >
+                      {formatFeet(len)}ft
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`line-endpoint-chip ${selectedLineId === line.id ? 'is-selected' : ''} ${isThisLineStart ? 'is-line-start' : ''}`}
+                    style={{ left: `${endLeftPct}%`, top: `${endTopPct}%` }}
+                    title={getLineLabel(line, index)}
+                    onPointerDown={(event) => {
+                      event.stopPropagation()
+                      if (isPanMode) return
+                      if (isLineMode) {
+                        if (!lineStartMarkerId && !lineStartLineId) {
+                          setLineStartLineId(line.id)
+                          setLineStartMarkerId(null)
+                          setSelectedLineId(line.id)
+                          setSelectedMarkerId(null)
+                          setOpenPanelSectionId('selected-item')
+                        }
+                        return
+                      }
+                      setSelectedLineId(line.id)
+                      setSelectedMarkerId(null)
+                      setAmpPromptMarkerId(null)
+                      setOpenPanelSectionId('selected-item')
+                      setDraggingLineEndId(line.id)
+                    }}
+                  >
+                    {getLineLabel(line, index)}
+                  </button>
+                </React.Fragment>
               )
             })}
             {ampPromptMarkerId &&
@@ -1221,16 +1985,18 @@ function App() {
                     onClose={() => setAmpPromptMarkerId(null)}
                   />
                 ))}
+            <p className="grid-helper-text">Grid: 1 ft squares. Placement snaps to 0.5 ft.</p>
           </div>
         </div>
 
         <BottomToolbar
           selectedTool={planner.selectedTool}
-          mainDropPlaced={mainDropPlaced}
           zoom={zoom}
           isPanMode={isPanMode}
           isPointerMode={isPointerMode}
+          isLineMode={isLineMode}
           onSelectTool={selectTool}
+          onSelectLineTool={selectLineTool}
           onZoomIn={() => setZoomLevel(zoom + ZOOM_STEP)}
           onZoomOut={() => setZoomLevel(zoom - ZOOM_STEP)}
           onZoomReset={() => {
@@ -1239,12 +2005,16 @@ function App() {
           }}
           onTogglePan={() => {
             setDraggingId(null)
+            setLineStartMarkerId(null)
+            setIsLineMode(false)
             setIsPointerMode(false)
             setIsPanMode((current) => !current)
           }}
           onSelectPointer={() => {
             setDraggingId(null)
             setIsPanMode(false)
+            setIsLineMode(false)
+            setLineStartMarkerId(null)
             setIsPointerMode(true)
           }}
         />
@@ -1253,7 +2023,9 @@ function App() {
       <RightPanel
         planner={planner}
         selectedMarker={selectedMarker}
+        selectedLine={selectedLine}
         exportStatus={exportStatus}
+        uploadError={uploadError}
         openSectionId={openPanelSectionId}
         onToggleSection={(sectionId) =>
           setOpenPanelSectionId((current) => (current === sectionId ? null : sectionId))
@@ -1262,8 +2034,10 @@ function App() {
         onToolChange={(selectedTool) => setPlanner((current) => ({ ...current, selectedTool }))}
         onMarkerChange={(id, patch) => updateMarker(id, patch)}
         onMarkerDelete={deleteMarker}
+        onLineChange={(id, patch) => updateLine(id, patch)}
+        onLineDelete={deleteLine}
         onRenderUpload={handleRenderUpload}
-        onRenderRemove={() => setPlanner((current) => ({ ...current, renderImage: undefined }))}
+        onRenderRemove={removeRenderImage}
         onRenderOpacityChange={(opacity) =>
           setPlanner((current) => ({
             ...current,
@@ -1281,7 +2055,76 @@ function App() {
           onComplete={() => setPlanner((current) => ({ ...current, hasCompletedSetup: true }))}
         />
       )}
+
+      {cropRequest && (
+        <RenderCropModal
+          cropRequest={cropRequest}
+          onApply={applyCroppedRender}
+          onCancel={() => setCropRequest(null)}
+        />
+      )}
     </main>
+  )
+}
+
+function SideLabel({
+  side,
+  value,
+  className,
+  onChange,
+}: {
+  side: string
+  value: string
+  className: string
+  onChange: (value: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const label = side.charAt(0).toUpperCase() + side.slice(1)
+
+  function startEdit() {
+    setDraft(value)
+    setEditing(true)
+  }
+
+  function commit() {
+    onChange(draft)
+    setEditing(false)
+  }
+
+  function cancel() {
+    setEditing(false)
+  }
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  return (
+    <div className={`side-label ${className}`} onDoubleClick={startEdit} title="Double-click to edit">
+      <strong>{label}</strong>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="side-label-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') cancel()
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span>{value || `${label} side label`}</span>
+      )}
+    </div>
   )
 }
 
@@ -1296,12 +2139,11 @@ function MeasurementGuides({
 }) {
   const leftPct = (marker.x / booth.width) * 100
   const topPct = ((booth.depth - marker.y) / booth.depth) * 100
-  const rightDistance = booth.width - marker.x
-  const backDistance = booth.depth - marker.y
-  const horizontalSide = marker.x <= rightDistance ? 'left' : 'right'
-  const verticalSide = marker.y <= backDistance ? 'front' : 'back'
-  const horizontalDistance = horizontalSide === 'left' ? marker.x : rightDistance
-  const verticalDistance = verticalSide === 'front' ? marker.y : backDistance
+  const { horizontalSide, verticalSide, horizontalDistance, verticalDistance } = getEdgeDistances(
+    marker.x,
+    marker.y,
+    booth,
+  )
   const horizontalLabelLeft =
     horizontalSide === 'left' ? leftPct / 2 : leftPct + (100 - leftPct) / 2
   const verticalLabelTop =
@@ -1310,6 +2152,13 @@ function MeasurementGuides({
   const guideStyle = {
     '--guide-color': markerColors[marker.type],
   } as CSSProperties
+
+  const showHorizontal = horizontalDistance > SNAP_FEET
+  const showVertical = verticalDistance > SNAP_FEET
+
+  if (!showHorizontal && !showVertical) {
+    return null
+  }
 
   return (
     <div
@@ -1324,82 +2173,102 @@ function MeasurementGuides({
           top: `${topPct}%`,
         }}
       />
-      <div
-        className="measurement-guide measurement-guide-horizontal"
-        style={
-          horizontalSide === 'left'
-            ? { left: 0, width: `${leftPct}%`, top: `${topPct}%` }
-            : { left: `${leftPct}%`, right: 0, top: `${topPct}%` }
-        }
-      />
-      <div
-        className="measurement-label measurement-label-horizontal"
-        style={{
-          left: `${horizontalLabelLeft}%`,
-          top: `${topPct}%`,
-        }}
-      >
-        {formatFeet(horizontalDistance)}ft
-      </div>
-      <div
-        className="measurement-guide measurement-guide-vertical"
-        style={
-          verticalSide === 'back'
-            ? { left: `${leftPct}%`, top: 0, height: `${topPct}%` }
-            : { left: `${leftPct}%`, top: `${topPct}%`, bottom: 0 }
-        }
-      />
-      <div
-        className="measurement-label measurement-label-vertical"
-        style={{
-          left: `${leftPct}%`,
-          top: `${verticalLabelTop}%`,
-        }}
-      >
-        {formatFeet(verticalDistance)}ft
-      </div>
+      {showHorizontal && (
+        <>
+          <div
+            className="measurement-guide measurement-guide-horizontal"
+            style={
+              horizontalSide === 'left'
+                ? { left: 0, width: `${leftPct}%`, top: `${topPct}%` }
+                : { left: `${leftPct}%`, right: 0, top: `${topPct}%` }
+            }
+          />
+          <div
+            className="measurement-label measurement-label-horizontal"
+            style={{
+              left: `${horizontalLabelLeft}%`,
+              top: `${topPct}%`,
+            }}
+          >
+            {formatFeet(horizontalDistance)}ft
+          </div>
+        </>
+      )}
+      {showVertical && (
+        <>
+          <div
+            className="measurement-guide measurement-guide-vertical"
+            style={
+              verticalSide === 'back'
+                ? { left: `${leftPct}%`, top: 0, height: `${topPct}%` }
+                : { left: `${leftPct}%`, top: `${topPct}%`, bottom: 0 }
+            }
+          />
+          <div
+            className="measurement-label measurement-label-vertical"
+            style={{
+              left: `${leftPct}%`,
+              top: `${verticalLabelTop}%`,
+            }}
+          >
+            {formatFeet(verticalDistance)}ft
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
-function MainDropConnections({
+function UtilityLineLayer({
   booth,
-  mainDrop,
   markers,
+  lines,
+  selectedLineId,
+  onSelectLine,
 }: {
   booth: BoothDetails
-  mainDrop: UtilityMarker
   markers: UtilityMarker[]
+  lines: UtilityLine[]
+  selectedLineId: string | null
+  onSelectLine: (lineId: string) => void
 }) {
-  const mainX = (mainDrop.x / booth.width) * 100
-  const mainY = ((booth.depth - mainDrop.y) / booth.depth) * 100
-  const connectedMarkers = markers.filter(
-    (marker) =>
-      marker.id !== mainDrop.id &&
-      marker.type !== 'main_drop' &&
-      marker.connectToMainDrop !== false,
-  )
-
-  if (connectedMarkers.length === 0) {
+  if (lines.length === 0) {
     return null
   }
 
   return (
     <svg
-      className="main-drop-connection-layer"
+      className="utility-line-layer"
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
-      aria-hidden="true"
     >
-      {connectedMarkers.map((marker) => (
-        <line
-          key={`connection-${marker.id}`}
-          x1={(marker.x / booth.width) * 100}
-          y1={((booth.depth - marker.y) / booth.depth) * 100}
-          x2={mainX}
-          y2={mainY}
-        />
-      ))}
+      {lines.map((line) => {
+        const startCoords = getLineStartCoords(line, markers, lines)
+        if (!startCoords) {
+          return null
+        }
+        const x1 = (startCoords.x / booth.width) * 100
+        const y1 = ((booth.depth - startCoords.y) / booth.depth) * 100
+        const x2 = (line.toX / booth.width) * 100
+        const y2 = ((booth.depth - line.toY) / booth.depth) * 100
+        const isSelected = line.id === selectedLineId
+        return (
+          <g key={line.id} className={isSelected ? 'is-selected' : undefined}>
+            <line
+              className="utility-line-hit"
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                onSelectLine(line.id)
+              }}
+            />
+            <line className="utility-line-path" x1={x1} y1={y1} x2={x2} y2={y2} />
+          </g>
+        )
+      })}
     </svg>
   )
 }
@@ -1443,11 +2312,12 @@ function AmpPrompt({
 
 function BottomToolbar({
   selectedTool,
-  mainDropPlaced,
   zoom,
   isPanMode,
   isPointerMode,
+  isLineMode,
   onSelectTool,
+  onSelectLineTool,
   onZoomIn,
   onZoomOut,
   onZoomReset,
@@ -1455,11 +2325,12 @@ function BottomToolbar({
   onSelectPointer,
 }: {
   selectedTool: MarkerType
-  mainDropPlaced: boolean
   zoom: number
   isPanMode: boolean
   isPointerMode: boolean
+  isLineMode: boolean
   onSelectTool: (tool: MarkerType) => void
+  onSelectLineTool: () => void
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomReset: () => void
@@ -1469,7 +2340,6 @@ function BottomToolbar({
   return (
     <nav className="bottom-toolbar" aria-label="Utility placement tools">
       {markerOptions.map((option) => {
-        const isMainDisabled = option.type === 'main_drop' && mainDropPlaced
         const activeStyle = {
           '--active-color': markerColors[option.type],
         } as CSSProperties
@@ -1478,11 +2348,10 @@ function BottomToolbar({
             key={option.type}
             type="button"
             className={`tool-${option.type} ${
-              !isPanMode && !isPointerMode && selectedTool === option.type ? 'is-active' : ''
+              !isPanMode && !isPointerMode && !isLineMode && selectedTool === option.type ? 'is-active' : ''
             }`}
-            disabled={isMainDisabled && selectedTool !== option.type}
             style={activeStyle}
-            title={isMainDisabled ? 'Only one Main Drop is allowed' : option.label}
+            title={option.label}
             onClick={() => onSelectTool(option.type)}
           >
             <MarkerTypeIcon type={option.type} size={17} />
@@ -1490,6 +2359,16 @@ function BottomToolbar({
           </button>
         )
       })}
+      <button
+        type="button"
+        className={`tool-line ${isLineMode ? 'is-active' : ''}`}
+        title="Line"
+        aria-label="Line"
+        onClick={onSelectLineTool}
+      >
+        <LineToolIcon size={17} />
+        <span>Line</span>
+      </button>
       <div className="toolbar-divider" aria-hidden="true" />
       <button
         type="button"
@@ -1528,13 +2407,17 @@ function BottomToolbar({
 function RightPanel({
   planner,
   selectedMarker,
+  selectedLine,
   exportStatus,
+  uploadError,
   openSectionId,
   onToggleSection,
   onBoothChange,
   onToolChange,
   onMarkerChange,
   onMarkerDelete,
+  onLineChange,
+  onLineDelete,
   onRenderUpload,
   onRenderRemove,
   onRenderOpacityChange,
@@ -1543,13 +2426,17 @@ function RightPanel({
 }: {
   planner: PlannerState
   selectedMarker?: UtilityMarker
+  selectedLine?: UtilityLine
   exportStatus: string
+  uploadError: string
   openSectionId: string | null
   onToggleSection: (sectionId: string) => void
   onBoothChange: (booth: BoothDetails) => void
   onToolChange: (tool: MarkerType) => void
   onMarkerChange: (id: string, patch: Partial<UtilityMarker>) => void
   onMarkerDelete: (id: string) => void
+  onLineChange: (id: string, patch: Partial<UtilityLine>) => void
+  onLineDelete: (id: string) => void
   onRenderUpload: (file: File | undefined) => void
   onRenderRemove: () => void
   onRenderOpacityChange: (opacity: number) => void
@@ -1619,12 +2506,21 @@ function RightPanel({
           />
           <NumberField label="Width" value={booth.width} onChange={(value) => setBoothField('width', value)} />
           <NumberField label="Depth" value={booth.depth} onChange={(value) => setBoothField('depth', value)} />
+          <label className="field-group">
+            <span className="field-label">Booth Type</span>
+            <select
+              value={booth.boothType}
+              onChange={(event) => setBoothField('boothType', event.target.value as BoothType)}
+            >
+              {BOOTH_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </label>
         </div>
       </PanelSection>
 
       <PanelSection
         id="grid-layout"
-        title="Grid Layout"
+        title="Booth Position"
         isOpen={openSectionId === 'grid-layout'}
         onToggle={onToggleSection}
       >
@@ -1634,22 +2530,19 @@ function RightPanel({
           <TextField label="Left" value={booth.sideLabels.left} onChange={(value) => setSideLabel('left', value)} />
           <TextField label="Right" value={booth.sideLabels.right} onChange={(value) => setSideLabel('right', value)} />
         </div>
-        <p className="panel-note">Grid: 1 ft squares. Placement snaps to 0.5 ft.</p>
       </PanelSection>
 
       <PanelSection
-        id="selected-drop"
-        title="Selected Drop"
-        isOpen={openSectionId === 'selected-drop'}
+        id="selected-item"
+        title="Selected Item"
+        isOpen={openSectionId === 'selected-item'}
         onToggle={onToggleSection}
       >
         {selectedMarker ? (
           <div className="selected-drop-fields">
-            <TextField
-              label="Label"
-              value={selectedMarker.label}
-              onChange={(value) => onMarkerChange(selectedMarker.id, { label: value })}
-            />
+            <div className="coordinate-readout">
+              {markerDisplay(selectedMarker.type).label}
+            </div>
             <label className="field-group">
               <span className="field-label">Type</span>
               <select
@@ -1672,9 +2565,15 @@ function RightPanel({
                 ))}
               </select>
             </label>
-            <div className="coordinate-readout">
-              {formatFeet(selectedMarker.x)} ft from left, {formatFeet(selectedMarker.y)} ft from front
-            </div>
+            {(() => {
+              const edges = getEdgeDistances(selectedMarker.x, selectedMarker.y, planner.booth)
+              return (
+                <div className="coordinate-readout">
+                  {formatFeet(edges.horizontalDistance)} ft from {edges.horizontalSide},{' '}
+                  {formatFeet(edges.verticalDistance)} ft from {edges.verticalSide}
+                </div>
+              )
+            })()}
             {isElectrical(selectedMarker.type) && (
               <>
                 <label className="field-group">
@@ -1698,25 +2597,6 @@ function RightPanel({
                   />
                   <span>24-hour power</span>
                 </label>
-              </>
-            )}
-            {selectedMarker.type !== 'main_drop' && (
-              <>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={selectedMarker.connectToMainDrop !== false}
-                    onChange={(event) =>
-                      onMarkerChange(selectedMarker.id, {
-                        connectToMainDrop: event.target.checked,
-                      })
-                    }
-                  />
-                  <span>Connect to Main Drop</span>
-                </label>
-                {!planner.markers.some((marker) => marker.type === 'main_drop') && (
-                  <p className="panel-note">Connection will appear after a Main Drop is placed.</p>
-                )}
               </>
             )}
             {selectedMarker.type === 'wifi' && (
@@ -1746,20 +2626,49 @@ function RightPanel({
               Delete marker
             </button>
           </div>
+        ) : selectedLine ? (
+          <div className="selected-drop-fields">
+            <TextField
+              label="Line Label"
+              value={selectedLine.label || ''}
+              onChange={(value) => onLineChange(selectedLine.id, { label: value })}
+            />
+            <div className="coordinate-readout">
+              Connected drop:{' '}
+              {planner.markers.find((marker) => marker.id === selectedLine.fromMarkerId)?.label || '-'}
+            </div>
+            <div className="coordinate-readout">Endpoint: {lineLocation(selectedLine)}</div>
+            <label className="field-group">
+              <span className="field-label">Notes</span>
+              <textarea
+                rows={3}
+                value={selectedLine.notes || ''}
+                onChange={(event) => onLineChange(selectedLine.id, { notes: event.target.value })}
+              />
+            </label>
+            <button type="button" className="danger-button" onClick={() => onLineDelete(selectedLine.id)}>
+              <Trash2 size={16} />
+              Delete line
+            </button>
+          </div>
         ) : (
-          <p className="panel-note">Please select a drop on the grid to edit its details.</p>
+          <p className="panel-note">Please select a drop or line on the grid to edit its details.</p>
         )}
       </PanelSection>
 
       <PanelSection
         id="booth-render-upload"
-        title="Booth Render Upload"
+        title="Booth Image Upload"
         isOpen={openSectionId === 'booth-render-upload'}
         onToggle={onToggleSection}
       >
+        <p className="panel-note">
+          Upload a top-down booth plan or render. The crop uses the current {booth.width} ft x{' '}
+          {booth.depth} ft booth ratio.
+        </p>
         <label className="upload-button">
           <Upload size={16} />
-          Upload PNG/JPG
+          {planner.renderImage ? 'Change PNG/JPG' : 'Upload PNG/JPG'}
           <input
             type="file"
             accept=".png,.jpg,.jpeg,image/png,image/jpeg"
@@ -1769,9 +2678,14 @@ function RightPanel({
             }}
           />
         </label>
+        {uploadError && <p className="upload-error">{uploadError}</p>}
         {planner.renderImage ? (
           <div className="upload-status">
             <p>{planner.renderImage.fileName}</p>
+            <p>
+              {planner.renderImage.wasCropped ? 'Cropped background' : 'Uploaded background'} -{' '}
+              {planner.renderImage.width} x {planner.renderImage.height}px
+            </p>
             <label className="field-group">
               <span className="field-label">Opacity</span>
               <input
@@ -1788,7 +2702,7 @@ function RightPanel({
             </button>
           </div>
         ) : (
-          <p className="panel-note">Optional top-down booth reference. It appears under the grid at low opacity.</p>
+          <p className="panel-note">JPG or PNG, max 5 MB. No render uploaded.</p>
         )}
       </PanelSection>
 
@@ -1800,11 +2714,7 @@ function RightPanel({
       >
         <button type="button" className="primary-button full-width" onClick={onExport}>
           <Download size={16} />
-          Export PDF placeholder
-        </button>
-        <button type="button" className="secondary-button full-width" onClick={onReset}>
-          <RotateCcw size={16} />
-          Reset planner
+          Export PDF
         </button>
         {exportStatus && <p className="export-status">{exportStatus}</p>}
       </PanelSection>
@@ -1831,7 +2741,13 @@ function RightPanel({
         </div>
       </PanelSection>
 
-      <footer className="panel-footer">Progress saves automatically in this browser.</footer>
+      <footer className="panel-footer">
+        <p>Progress saves automatically in this browser.</p>
+        <button type="button" className="reset-button" onClick={onReset}>
+          <RotateCcw size={14} />
+          Reset planner
+        </button>
+      </footer>
     </aside>
   )
 }
