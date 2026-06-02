@@ -8,6 +8,7 @@ import {
   Maximize2,
   MousePointer2,
   RotateCcw,
+  RotateCw,
   Trash2,
   Upload,
   Wifi,
@@ -1221,6 +1222,7 @@ function RenderCropModal({
 }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
+  const [rotation, setRotation] = useState(0)
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [error, setError] = useState('')
@@ -1241,6 +1243,7 @@ function RenderCropModal({
           width: cropRequest.outputWidth,
           height: cropRequest.outputHeight,
         },
+        rotation,
       )
 
       onApply(dataUrl)
@@ -1273,6 +1276,7 @@ function RenderCropModal({
             image={cropRequest.imageSrc}
             crop={crop}
             zoom={zoom}
+            rotation={rotation}
             aspect={cropRequest.aspect}
             onCropChange={setCrop}
             onZoomChange={setZoom}
@@ -1297,17 +1301,37 @@ function RenderCropModal({
         {error && <p className="upload-error">{error}</p>}
 
         <div className="modal-actions crop-modal-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={applyCrop}
-            disabled={isApplying || !croppedAreaPixels}
-          >
-            {isApplying ? 'Applying...' : 'Apply Crop'}
-          </button>
-          <button type="button" className="secondary-button" onClick={onCancel}>
-            Cancel
-          </button>
+          <div className="crop-action-group" aria-label="Image rotation controls">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setRotation((current) => (current + 270) % 360)}
+            >
+              <RotateCcw size={15} />
+              Rotate Left
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setRotation((current) => (current + 90) % 360)}
+            >
+              <RotateCw size={15} />
+              Rotate Right
+            </button>
+          </div>
+          <div className="crop-action-group">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={applyCrop}
+              disabled={isApplying || !croppedAreaPixels}
+            >
+              {isApplying ? 'Applying...' : 'Apply Crop'}
+            </button>
+            <button type="button" className="secondary-button" onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
         </div>
       </section>
     </div>
