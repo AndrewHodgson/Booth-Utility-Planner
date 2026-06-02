@@ -1,48 +1,27 @@
-# Booth Utility Planner — Project Notes
-
-## Project name
-
-Booth Utility Planner
+# Booth Utility Planner - Project Notes
 
 ## Purpose
 
-A lightweight web app for SourceOne Events that lets exhibitors and internal project managers create a clear booth utility layout plan. The primary use case is showing where electrical and WiFi drops should be placed inside an exhibit booth.
+Booth Utility Planner is a lightweight 2D utility layout tool for SourceOne Events. It helps exhibitors and SourceOne project managers communicate where electrical drops, WiFi drops, and utility runs should be placed inside a booth.
 
-This is a layout generator, not an ordering or payment system. The final output is a clean SourceOne-branded PDF that users can download and email.
+The app is a layout generator. It is not an ordering, pricing, payment, or approval system. The main deliverable is a SourceOne-branded PDF that can be downloaded and shared.
 
-## Primary users
-
-1. Exhibitors filling out their booth utility layout
-2. SourceOne Events project managers using it onsite or during planning
-
-## Design direction
-
-- Clean canvas workspace
-- Floating right-side panel
-- Bottom toolbar for selecting placement tools
-- Feels like a technical layout editor, not a 3D configurator
-- SourceOne-branded throughout
-
----
-
-## Core workflow
+## Current Workflow
 
 1. User opens the app.
-2. Welcome/setup screen asks for contact, show, and booth details.
-3. User selects booth width and depth.
-4. App creates a rectangular 1-foot grid canvas.
-5. User labels all four sides of the booth with adjacent booth numbers or aisle names.
-6. User places electrical and WiFi drops using the bottom toolbar.
-7. User selects placed drops to edit details in the right-side panel.
-8. User can draw extension-cord lines from existing drops using the Line tool.
-9. User optionally uploads a top-down booth reference image.
-10. User exports a SourceOne-branded letter-size PDF.
+2. Setup modal collects contact, show, and booth details.
+3. App creates a 1 ft booth grid based on width and depth.
+4. User edits side labels for Front, Back, Left, and Right.
+5. User places electrical and WiFi drops from the bottom toolbar.
+6. User edits selected drop details in the right panel.
+7. User draws utility runs with the Line tool.
+8. User optionally uploads, crops, rotates, and fades a booth image behind the grid.
+9. User exports a SourceOne-branded PDF.
+10. Browser localStorage preserves progress after refresh.
 
----
+## Setup Details
 
-## Setup screen fields
-
-The opening modal collects:
+The setup modal collects:
 
 - Name
 - Company Name
@@ -52,287 +31,257 @@ The opening modal collects:
 - Show Name
 - Show Date
 - Show Location
-- Booth Width (preset 10–100 ft or custom)
-- Booth Depth (preset 10–100 ft or custom)
-- Booth Type (Inline, Corner, Peninsula, End Cap, Island)
+- Booth Width
+- Booth Depth
+- Booth Type
 
----
+Booth dimensions support preset 10 ft increments from 10 ft to 100 ft plus custom values. Internally, width and depth are clamped between 1 ft and 100 ft. Default booth size is 20 ft x 20 ft.
 
-## Booth size and grid rules
+Booth types:
+
+- Inline
+- Corner
+- Peninsula
+- End Cap
+- Island
+
+## Grid Rules
 
 - Grid unit: 1 ft squares
-- Placement snapping: 0.5 ft increments
-- Maximum booth size: 100 ft × 100 ft
-- Minimum practical size: 10 ft × 10 ft
-- Coordinates stored in feet (x from left edge, y from front edge)
-- Large booths support zoom and pan
+- Placement snapping: 0.5 ft
+- Coordinates: x from left edge, y from front edge
+- Front of booth is the visual bottom side of the grid
+- Canvas supports zoom and pan
+- The Fit button resets zoom to 1 and pan to origin
+- Side labels sit around the four grid sides
+- Optional booth image renders under the grid and all markers/lines/guides
 
----
+## Editable Side Labels
 
-## Booth orientation
-
-Users label all four sides:
+Side labels exist for:
 
 - Front
 - Back
 - Left
 - Right
 
-Each side can have an adjacent booth number or aisle name.
+They can be edited from the Booth Position panel and directly on the grid via double-click. Custom text persists in `booth.sideLabels`.
 
----
+PDF export draws side labels from the same state. PDF side labels are measured and anchored from stable centers so custom text should not shift the visual gap from the grid.
 
-## Canvas
+## Drop Types
 
-The main workspace is a 2D grid:
+| Type | Internal value | Shape/icon | Color |
+|---|---|---|---|
+| 120 V | `120v` | Triangle | Blue |
+| 208 V Single Phase | `208v_single_phase` | Circle | Purple |
+| 208 V Three Phase | `208v_three_phase` | Square | Orange |
+| 480 V Three Phase | `480v_three_phase` | Diamond | Red |
+| WiFi | `wifi` | WiFi icon | Green |
 
-- Rectangular booth footprint based on width × depth
-- 1-foot grid lines
-- 0.5-foot snap placement
-- Side labels on all four sides
-- Optional low-opacity booth reference image under the grid (PNG/JPG, max 5 MB)
-- Utility markers placed on the grid
-- Marker icons and type-name display
-- Zoom controls, pan tool
-- Selected marker state with distance guide lines
-- Drag-to-move markers
+Placed electrical markers show type and amp information on the web grid. WiFi markers show speed when set. PDF marker circles use a simplified numeric ID.
 
-Grid helper text ("Grid: 1 ft squares. Placement snaps to 0.5 ft.") appears below the grid, aligned to the grid's left edge.
+## Amp Options
 
----
+Amp options are type-specific.
 
-## Bottom toolbar
-
-Tools available in order:
-
-| Tool | Behavior |
-|---|---|
-| Pointer / Select | Select and drag markers; select lines |
-| Pan | Pan the canvas |
-| 120 V | Place a 120 V electrical drop |
-| 208 V Single Phase | Place a 208 V single-phase electrical drop |
-| 208 V Three Phase | Place a 208 V three-phase electrical drop |
-| 480 V Three Phase | Place a 480 V three-phase electrical drop |
-| WiFi | Place a WiFi drop |
-| Line | Draw a utility run from an existing drop to a grid point |
-| Zoom out | Step zoom out |
-| Zoom % | Read-only current zoom level |
-| Zoom in | Step zoom in |
-| Fit | Reset zoom and pan to default |
-
-Pointer, Pan, and Fit are icon-only buttons with accessible labels. Electrical tool buttons show a shape icon and the voltage label.
-
----
-
-## Drop icons
-
-Electrical drops use geometric shape icons. Toolbar buttons show the shape only (no number). Placed markers on the grid show the shape with the marker's **instance number within its own type** — the first 120 V drop shows 1, the second shows 2; the first 208 SP drop also shows 1, and so on.
-
-| Drop type | Shape | Color |
+| Drop type | Valid amps | Default |
 |---|---|---|
-| 120 V | Triangle | Blue (#2563eb) |
-| 208 V Single Phase | Circle | Purple (#7c3aed) |
-| 208 V Three Phase | Square | Orange (#f97316) |
-| 480 V Three Phase | Diamond | Red (#be123c) |
-| WiFi | WiFi icon | Green (#047857) |
+| 120 V | 10 AMP, 20 AMP | 10 AMP |
+| 208 V Single Phase | 30 AMP, 60 AMP | 30 AMP |
+| 208 V Three Phase | 20 AMP, 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 20 AMP |
+| 480 V Three Phase | 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 30 AMP |
 
-Grid markers display the drop type name (`120V`, `208 1P`, `208 3P`, `480 3P`, `WiFi`) with amps below for electrical drops, or speed below for WiFi if set.
+The quick on-grid amp prompt and the Selected Item panel both use the same option map.
 
----
+If a marker changes type and its current amp is invalid for the new type, the app resets to the new type's default. Saved planner data is sanitized the same way during load.
 
-## Electrical drops
+## WiFi Options
 
-Fields per electrical drop:
+WiFi markers use speed instead of amps:
 
-- Drop type (editable via dropdown in Selected Item panel)
-- Amps (5A, 10A, 20A)
-- 24-hour power toggle
-- Notes
+- Basic
+- Standard
+- High Speed
+- Custom
 
-After placing an electrical drop, a small on-grid popup asks for amps. Amps can also be changed from the right panel.
+WiFi drops do not use 24-hour power.
 
----
+## Marker Selection And Guides
 
-## WiFi drops
+Users can select and drag markers. When selected, dotted measurement guides show the nearest horizontal and vertical booth-edge distances. The same nearest-edge logic is used in the Selected Item panel readout.
 
-Fields per WiFi drop:
+Deleting a marker also removes lines that start from that marker and line branches that depend on removed lines.
 
-- Speed (Basic, Standard, High Speed, Custom)
-- Notes
+## Line Tool
 
----
-
-## Line tool
-
-The Line tool represents an extension cord or utility run coming off an existing drop.
+The Line tool represents a utility run or extension from an existing point.
 
 Behavior:
 
-1. User selects the Line tool.
-2. User clicks an existing drop to start the line.
-3. User clicks a grid point to end the line (snaps to 0.5 ft).
-4. Line is created. Tool returns to Pointer mode.
-5. Lines can be selected, labeled, and deleted.
-6. Moving a connected drop updates the line's start point.
-7. Deleting a drop deletes its connected lines.
-8. Lines persist in localStorage.
-9. Lines appear in the PDF grid and Line Details table.
+1. User selects Line.
+2. User clicks a drop or existing line endpoint to start.
+3. User clicks a grid point to end.
+4. Endpoint snaps to 0.5 ft.
+5. New line is selected and the app returns to pointer mode.
+6. Users can edit line label and notes in the Selected Item panel.
+7. Line endpoints can be dragged.
+8. Lines persist in localStorage and are exported to PDF.
 
-Line data model:
+Lines can start from either:
+
+- A marker (`fromMarkerId`)
+- Another line endpoint (`fromLineId`)
+
+Line Details in PDF describes drop connections by PDF marker ID and visible drop type. For line-to-line branches, it shows the source line endpoint rather than pretending it is a drop.
+
+## Booth Image Upload, Crop, And Rotate
+
+The Booth Image Upload panel lets the user add a top-down booth plan or render behind the grid.
+
+Supported formats:
+
+- PNG
+- JPG
+- JPEG
+
+Rules:
+
+- Maximum size: 5 MB
+- Crop aspect ratio follows current booth width/depth
+- Cropped image fits the booth grid area, not the browser window
+- Image renders behind grid, markers, lines, labels, and measurement guides
+- Default opacity is low so the grid remains readable
+- Opacity can be adjusted from the right panel
+- Remove image clears it from state
+- Reset planner clears the image
+
+Crop modal behavior:
+
+- Drag/pan image
+- Zoom slider
+- Rotate Left and Rotate Right in 90-degree increments
+- Apply Crop bakes crop, zoom, pan, and rotation into the saved image data URL
+
+If the uploaded image already matches the booth ratio within tolerance, it is resized and saved directly without forcing the crop modal.
+
+## Right Panel
+
+Single-open accordion sections:
+
+| Section | Contents |
+|---|---|
+| Booth Details | Contact/show fields, booth dimensions, booth type |
+| Booth Position | Front, Back, Left, Right labels |
+| Selected Item | Drop or line editing |
+| Booth Image Upload | Upload/change/remove image and opacity |
+| Export | PDF export button |
+| Help | SourceOne contact info |
+
+The panel footer contains the Reset planner button and a note that progress saves automatically in the browser.
+
+## Persistence
+
+The app saves one `PlannerState` object to:
+
+```txt
+sourceone-booth-utility-planner
+```
+
+Saved state includes:
+
+- Contact/show/booth details
+- Booth width, depth, and type
+- Side labels
+- Markers and marker details
+- Lines and line details
+- Selected tool
+- Cropped booth image data URL, opacity, filename, output size, and crop status
+- Setup completion state
+
+No server, database, user account, or cloud sync is involved.
+
+Legacy behavior:
+
+- Old `main_drop` markers migrate to `120v`.
+- Old invalid amp values are replaced with the default amp for that marker's type.
+
+## PDF Export
+
+PDF export uses jsPDF and produces a portrait letter-size PDF.
+
+Header:
+
+- SourceOne logo, fit proportionally so it is not distorted
+- Title
+- Show info line
+- Booth info line
+
+Grid:
+
+- Full booth footprint regardless of current zoom/pan
+- Optional booth image behind the grid
+- Neutral black/gray grid lines over the image
+- Strong booth border
+- Utility markers with numeric IDs only
+- Utility lines with endpoint chips and length labels
+- Measurement guides from markers to nearest booth edges
+- Stable measured side labels around the grid
+
+Tables:
+
+- Legend includes only marker types present in the plan
+- Drop Details: `ID | Type | Location | Amps / Speed | 24 Hour | Notes`
+- Line Details: `ID | Connected Drop ID | Connected Drop Type | End Location | Notes`
+
+PDF marker IDs, Drop Details IDs, and Line Details connected drop IDs use the same numbering helper. Internal labels like `E1` are not shown in PDF tables.
+
+Footer:
+
+- Email, phone, and fax on every page
+
+## Current Data Models
 
 ```ts
+type MarkerType =
+  | '120v'
+  | '208v_single_phase'
+  | '208v_three_phase'
+  | '480v_three_phase'
+  | 'wifi'
+
+type AmpValue =
+  | '10A'
+  | '20A'
+  | '30A'
+  | '60A'
+  | '100A'
+  | '200A'
+  | '400A'
+  | ''
+
+type UtilityMarker = {
+  id: string
+  label: string
+  type: MarkerType
+  x: number
+  y: number
+  amps?: AmpValue
+  speed?: string
+  is24Hour?: boolean
+  notes?: string
+}
+
 type UtilityLine = {
   id: string
-  fromMarkerId: string
+  fromMarkerId?: string
+  fromLineId?: string
   toX: number
   toY: number
   label?: string
   notes?: string
 }
-```
 
----
-
-## Marker distance guides
-
-When a marker is selected, dotted guide lines extend from the marker to the nearest edges of the booth. Distance labels appear on the guides showing how far the drop is from each edge.
-
----
-
-## Booth reference image upload
-
-Users can upload a top-down booth image as a reference layer.
-
-- Supported formats: PNG, JPG
-- Maximum file size: 5 MB
-- Image is stretched to fill the booth footprint
-- Image appears under the grid at low opacity
-- Right panel allows upload, remove, and opacity adjustment
-- Uploaded image appears in the exported PDF if present
-
----
-
-## Right panel
-
-Single-open accordion with six sections:
-
-### Booth Details
-
-Display and edit:
-- Name, Company Name, Email, Phone
-- Booth Number, Show Name, Show Date, Show Location
-- Booth Width, Booth Depth
-- Booth Type (Inline, Corner, Peninsula, End Cap, Island)
-
-### Booth Position
-
-Edit the four side labels:
-- Front, Back, Left, Right
-
-### Selected Item
-
-Shown when a drop or line is selected.
-
-- If nothing is selected: `Please select a drop or line on the grid to edit its details.`
-- If a drop is selected: type dropdown, coordinate readout, amps/speed fields, 24-hour toggle (electrical), notes, delete button
-- If a line is selected: line label, connected drop readout, endpoint readout, notes, delete button
-
-### Booth Render Upload
-
-- Upload a PNG/JPG reference image
-- Adjust opacity
-- Remove image
-
-### Export
-
-- Export PDF button
-
-### Help
-
-- Email: exhibitorservices@sourceoneevents.com
-- Phone: 708.344.3050
-- Fax: 708.344.4111
-
-### Reset planner
-
-A **Reset planner** button sits at the bottom of the right panel, below all accordion sections. Resetting clears all state including markers, lines, and booth details.
-
----
-
-## Browser persistence
-
-State saves automatically to `localStorage` on every change under the key `sourceone-booth-utility-planner`.
-
-Saved data:
-- Contact/show/booth details
-- Booth width, depth, booth type
-- Side labels
-- Placed markers and all marker fields
-- Lines and all line fields
-- Uploaded reference image and opacity
-- Selected tool
-
-No user accounts needed.
-
-Old sessions that stored a `main_drop` marker type are automatically migrated to `120v` on load.
-
----
-
-## PDF export
-
-Generates a letter-size portrait PDF.
-
-Structure:
-
-**Header**
-- SourceOne logo (top left)
-- Title: Booth Utility Planner
-- Show info: `Show: [name] | Location: [location] | Date: [date]`
-- Booth info: `Booth #: [number] | Booth Size: [W]ft x [D]ft | Booth Type: [type]`
-
-**Grid section**
-- Full booth grid (not cropped to current zoom/pan)
-- Optional reference image under the grid
-- Placed markers with instance numbers and amps/speed
-- Colored dotted distance guide lines with labels
-- Side labels on all four sides
-- Utility lines
-
-**Below grid**
-- Legend (only types present in the layout)
-- Drop Details table: Type, Location, Amps/Speed, 24 Hour, Notes
-- Line Details table (if lines exist): ID, Connected Drop, End Location, Notes
-
-**Footer (every page)**
-- `Email: exhibitorservices@sourceoneevents.com | Phone: 708.344.3050 | Fax: 708.344.4111`
-
-PDF is not cropped to the current zoom or pan state — always shows the full booth.
-
----
-
-## Marker data model
-
-```ts
-type UtilityMarker = {
-  id: string
-  label: string        // auto-generated (e.g. E1, W1); kept for internal use
-  type: '120v' | '208v_single_phase' | '208v_three_phase' | '480v_three_phase' | 'wifi'
-  x: number            // feet from left edge
-  y: number            // feet from front edge
-  amps?: '5A' | '10A' | '20A' | ''
-  speed?: string
-  is24Hour?: boolean
-  notes?: string
-}
-```
-
-The `label` field is auto-generated and used internally (e.g. the "Connected Drop" column in the PDF line table). It is not exposed as an editable field in the UI.
-
----
-
-## Booth details data model
-
-```ts
 type BoothDetails = {
   name: string
   companyName: string
@@ -354,32 +303,31 @@ type BoothDetails = {
 }
 ```
 
----
+`UtilityMarker.label` still exists for internal compatibility and auto-labeling, but it is not shown as the primary identifier in the PDF.
 
-## Out of scope
+## Out Of Scope
 
-- Payment or pricing
-- User accounts or authentication
+- Pricing
+- Payment
+- User accounts
+- Database storage
 - Admin dashboard
 - CAD/DXF export
 - Non-rectangular booth shapes
-- Manual image calibration
-- Multiple service entry points
-- Complex electrical validation
 - Direct email submission
-- Database storage
 - Approval workflow
+- Shared cloud links
 
-## Possible future enhancements
+## Possible Future Enhancements
 
 - Submit layout directly to SourceOne
-- Email confirmation to user and SourceOne
+- Email confirmation to exhibitor and SourceOne
 - Save/share layout link
 - Show-specific templates
-- Pre-filled event data
-- More amp options (30A, 50A, 100A)
+- Event prefill
 - Equipment served field
-- Hardline internet / static IP option
+- Hardline internet/static IP options
 - Import/export JSON layout
 - Better mobile editing experience
-- Booth furniture / object reference layer
+- Booth furniture/object reference layer
+- Image calibration against known booth dimensions

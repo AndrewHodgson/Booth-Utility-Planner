@@ -1,5 +1,10 @@
 # Codex Task — Booth Utility Planner Initial Build
 
+> Historical note: this file describes the original MVP build request and is no
+> longer the current product specification. For current behavior, implementation
+> notes, amp options, image upload/crop/rotate behavior, line details, PDF export,
+> and persistence, use `README.md` and `Project Notes.md`.
+
 We are building a new React + TypeScript + Vite web app called Booth Utility Planner for SourceOne Events.
 
 Use the existing `build-an-exhibit` project in the VS Code workspace as visual reference only. Do not modify the build-an-exhibit project. This new app should live only inside the `Booth Utility Planner` folder.

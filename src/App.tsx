@@ -1806,20 +1806,6 @@ function App() {
   return (
     <main className="app-shell">
       <section className="workspace">
-        <header className="workspace-header">
-          <div className="brand-block">
-            <img className="sourceone-logo" src={sourceOneLogoPath} alt="SourceOne Events" />
-            <div className="show-summary">
-              <p className="eyebrow">Booth Utility Planner</p>
-              <h1>{planner.booth.showName || 'Untitled Show'}</h1>
-              <div className="show-meta">
-                {planner.booth.showLocation && <span>{planner.booth.showLocation}</span>}
-                {planner.booth.showDate && <span>{planner.booth.showDate}</span>}
-              </div>
-            </div>
-          </div>
-        </header>
-
         <div
           className={`canvas-stage ${isPanMode ? 'is-pan-mode' : ''} ${
             panStart ? 'is-panning' : ''
