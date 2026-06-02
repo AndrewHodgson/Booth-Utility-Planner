@@ -28,13 +28,15 @@ type MarkerType =
   | '480v_three_phase'
   | 'wifi'
 
+type AmpValue = '10A' | '20A' | '30A' | '60A' | '100A' | '200A' | '400A' | ''
+
 type UtilityMarker = {
   id: string
   label: string
   type: MarkerType
   x: number
   y: number
-  amps?: '5A' | '10A' | '20A' | ''
+  amps?: AmpValue
   speed?: string
   is24Hour?: boolean
   notes?: string
@@ -137,6 +139,13 @@ const markerOptions: Array<{
   { type: '480v_three_phase', label: '480 V Three Phase', short: '480 3P' },
   { type: 'wifi', label: 'WiFi', short: 'WiFi' },
 ]
+
+const ampOptionsByType: Record<Exclude<MarkerType, 'wifi'>, AmpValue[]> = {
+  '120v': ['10A', '20A'],
+  '208v_single_phase': ['30A', '60A'],
+  '208v_three_phase': ['20A', '30A', '60A', '100A', '200A', '400A'],
+  '480v_three_phase': ['30A', '60A', '100A', '200A', '400A'],
+}
 
 const markerColors: Record<MarkerType, string> = {
   '120v': '#2563eb',
@@ -366,8 +375,24 @@ function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
   return `E${count}`
 }
 
-function isElectrical(type: MarkerType) {
+function isElectrical(type: MarkerType): type is Exclude<MarkerType, 'wifi'> {
   return type !== 'wifi'
+}
+
+function getAmpOptions(type: MarkerType) {
+  return isElectrical(type) ? ampOptionsByType[type] : []
+}
+
+function getDefaultAmp(type: MarkerType): AmpValue | undefined {
+  return getAmpOptions(type)[0]
+}
+
+function getValidAmp(type: MarkerType, amps: unknown): AmpValue | undefined {
+  const options = getAmpOptions(type)
+  if (options.length === 0) {
+    return undefined
+  }
+  return options.includes(amps as AmpValue) ? (amps as AmpValue) : options[0]
 }
 
 function markerDisplay(type: MarkerType) {
@@ -798,10 +823,11 @@ function drawDropTable(doc: jsPDF, planner: PlannerState, startY: number) {
 function drawLineTable(doc: jsPDF, planner: PlannerState, startY: number) {
   const pageHeight = doc.internal.pageSize.getHeight()
   const columns = [
-    { label: 'ID', width: 52 },
-    { label: 'Connected Drop', width: 102 },
-    { label: 'End Location', width: 174 },
-    { label: 'Notes', width: 212 },
+    { label: 'ID', width: 44 },
+    { label: 'Connected Drop ID', width: 76 },
+    { label: 'Connected Drop Type', width: 122 },
+    { label: 'End Location', width: 154 },
+    { label: 'Notes', width: 144 },
   ]
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0)
   let y = startY
@@ -823,18 +849,22 @@ function drawLineTable(doc: jsPDF, planner: PlannerState, startY: number) {
   drawHeader()
 
   planner.lines.forEach((line, index) => {
-    let sourceLabel = '-'
+    let connectedId = '-'
+    let connectedType = '-'
     if (line.fromMarkerId) {
       const fromMarker = planner.markers.find((m) => m.id === line.fromMarkerId)
-      sourceLabel = fromMarker?.label || '-'
+      connectedId = fromMarker ? getPdfMarkerId(planner.markers, fromMarker) : '-'
+      connectedType = fromMarker ? markerDisplay(fromMarker.type).label : '-'
     } else if (line.fromLineId) {
       const fromLine = planner.lines.find((l) => l.id === line.fromLineId)
       const fromLineIndex = planner.lines.findIndex((l) => l.id === line.fromLineId)
-      sourceLabel = fromLine ? getLineLabel(fromLine, fromLineIndex) : '-'
+      connectedId = fromLine ? `${getLineLabel(fromLine, fromLineIndex)} endpoint` : '-'
+      connectedType = 'Line endpoint'
     }
     const cells = [
       getLineLabel(line, index),
-      sourceLabel,
+      connectedId,
+      connectedType,
       lineLocation(line),
       line.notes?.trim() || '-',
     ]
@@ -973,7 +1003,7 @@ function readInitialState(): PlannerState {
             return {
               ...marker,
               type: migratedType,
-              amps: isElectrical(migratedType) ? marker.amps || '10A' : undefined,
+              amps: getValidAmp(migratedType, marker.amps),
               speed: migratedType === 'wifi' ? marker.speed || 'Standard' : undefined,
               is24Hour: isElectrical(migratedType) ? Boolean(marker.is24Hour) : false,
               notes: marker.notes || '',
@@ -1522,7 +1552,7 @@ function App() {
       type: planner.selectedTool,
       x: coords.x,
       y: coords.y,
-      amps: isElectrical(planner.selectedTool) ? '10A' : undefined,
+      amps: getDefaultAmp(planner.selectedTool),
       speed: planner.selectedTool === 'wifi' ? 'Standard' : undefined,
       is24Hour: false,
       notes: '',
@@ -2284,6 +2314,8 @@ function AmpPrompt({
   onSelect: (amps: UtilityMarker['amps']) => void
   onClose: () => void
 }) {
+  const ampOptions = getAmpOptions(marker.type)
+
   return (
     <div
       className="amp-prompt"
@@ -2296,14 +2328,16 @@ function AmpPrompt({
       <label>
         <span>Amps</span>
         <select
-          value={marker.amps || '10A'}
+          value={getValidAmp(marker.type, marker.amps) || ''}
           autoFocus
           onChange={(event) => onSelect(event.target.value as UtilityMarker['amps'])}
           onBlur={onClose}
         >
-          <option value="5A">5A</option>
-          <option value="10A">10A</option>
-          <option value="20A">20A</option>
+          {ampOptions.map((amps) => (
+            <option key={amps} value={amps}>
+              {formatAmps(amps)}
+            </option>
+          ))}
         </select>
       </label>
     </div>
@@ -2551,7 +2585,7 @@ function RightPanel({
                   const type = event.target.value as MarkerType
                   onMarkerChange(selectedMarker.id, {
                     type,
-                    amps: isElectrical(type) ? selectedMarker.amps || '10A' : undefined,
+                    amps: getValidAmp(type, selectedMarker.amps),
                     speed: type === 'wifi' ? selectedMarker.speed || 'Standard' : undefined,
                     is24Hour: isElectrical(type) ? selectedMarker.is24Hour : false,
                   })
@@ -2579,14 +2613,16 @@ function RightPanel({
                 <label className="field-group">
                   <span className="field-label">Amps</span>
                   <select
-                    value={selectedMarker.amps || ''}
+                    value={getValidAmp(selectedMarker.type, selectedMarker.amps) || ''}
                     onChange={(event) =>
                       onMarkerChange(selectedMarker.id, { amps: event.target.value as UtilityMarker['amps'] })
                     }
                   >
-                    <option value="5A">5A</option>
-                    <option value="10A">10A</option>
-                    <option value="20A">20A</option>
+                    {getAmpOptions(selectedMarker.type).map((amps) => (
+                      <option key={amps} value={amps}>
+                        {formatAmps(amps)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="toggle-row">
