@@ -28,8 +28,11 @@ type MarkerType =
   | '208v_three_phase'
   | '480v_three_phase'
   | 'wifi'
+  | 'hanging_sign'
+  | 'custom_drop'
 
 type AmpValue = '10A' | '20A' | '30A' | '60A' | '100A' | '200A' | '400A' | ''
+type ElectricalMarkerType = Exclude<MarkerType, 'wifi' | 'hanging_sign' | 'custom_drop'>
 
 type UtilityMarker = {
   id: string
@@ -40,6 +43,8 @@ type UtilityMarker = {
   amps?: AmpValue
   speed?: string
   is24Hour?: boolean
+  hangingSignHeight?: string
+  isRotating?: boolean
   notes?: string
 }
 
@@ -139,13 +144,15 @@ const markerOptions: Array<{
   short: string
 }> = [
   { type: '120v', label: '120 V', short: '120V' },
-  { type: '208v_single_phase', label: '208 V Single Phase', short: '208 1P' },
-  { type: '208v_three_phase', label: '208 V Three Phase', short: '208 3P' },
-  { type: '480v_three_phase', label: '480 V Three Phase', short: '480 3P' },
+  { type: '208v_single_phase', label: '208 V Single', short: '208 1P' },
+  { type: '208v_three_phase', label: '208 V Three', short: '208 3P' },
+  { type: '480v_three_phase', label: '480 V Three', short: '480 3P' },
   { type: 'wifi', label: 'WiFi', short: 'WiFi' },
+  { type: 'hanging_sign', label: 'Hanging Sign', short: 'Sign' },
+  { type: 'custom_drop', label: 'Custom Marker', short: 'Custom' },
 ]
 
-const ampOptionsByType: Record<Exclude<MarkerType, 'wifi'>, AmpValue[]> = {
+const ampOptionsByType: Record<ElectricalMarkerType, AmpValue[]> = {
   '120v': ['10A', '20A'],
   '208v_single_phase': ['30A', '60A'],
   '208v_three_phase': ['20A', '30A', '60A', '100A', '200A', '400A'],
@@ -158,6 +165,8 @@ const markerColors: Record<MarkerType, string> = {
   '208v_three_phase': '#f97316',
   '480v_three_phase': '#be123c',
   wifi: '#047857',
+  hanging_sign: '#0891b2',
+  custom_drop: '#52525b',
 }
 
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
@@ -167,7 +176,7 @@ function NumberedShapeIcon({
   number,
   size,
 }: {
-  shape: 'triangle' | 'circle' | 'square' | 'diamond'
+  shape: 'triangle' | 'circle' | 'square' | 'diamond' | 'pentagon' | 'hexagon'
   number?: number
   size: number
 }) {
@@ -194,6 +203,8 @@ function NumberedShapeIcon({
       {shape === 'circle' && <circle {...strokeProps} cx="12" cy="12" r="8.5" />}
       {shape === 'square' && <rect {...strokeProps} x="4" y="4" width="16" height="16" rx="1.5" />}
       {shape === 'diamond' && <path {...strokeProps} d="M12 2 22 12 12 22 2 12Z" />}
+      {shape === 'pentagon' && <path {...strokeProps} d="M12 3 21 10 17.5 21H6.5L3 10 12 3Z" />}
+      {shape === 'hexagon' && <path {...strokeProps} d="M7 4H17L22 12 17 20H7L2 12 7 4Z" />}
       {number !== undefined && (
         <text
           x="12"
@@ -218,13 +229,17 @@ function MarkerTypeIcon({ type, size = 15, number }: { type: MarkerType; size?: 
     case '120v':
       return <NumberedShapeIcon shape="triangle" number={number} size={size} />
     case '208v_single_phase':
-      return <NumberedShapeIcon shape="circle" number={number} size={size} />
-    case '208v_three_phase':
       return <NumberedShapeIcon shape="square" number={number} size={size} />
-    case '480v_three_phase':
+    case '208v_three_phase':
       return <NumberedShapeIcon shape="diamond" number={number} size={size} />
+    case '480v_three_phase':
+      return <NumberedShapeIcon shape="pentagon" number={number} size={size} />
     case 'wifi':
       return <Wifi size={size} />
+    case 'hanging_sign':
+      return <NumberedShapeIcon shape="circle" number={number} size={size} />
+    case 'custom_drop':
+      return <NumberedShapeIcon shape="hexagon" number={number} size={size} />
   }
 }
 
@@ -383,13 +398,35 @@ function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
     const count = markers.filter((marker) => marker.type === 'wifi').length + 1
     return `W${count}`
   }
+  if (type === 'hanging_sign') {
+    const count = markers.filter((marker) => marker.type === 'hanging_sign').length + 1
+    return `S${count}`
+  }
+  if (type === 'custom_drop') {
+    const count = markers.filter((marker) => marker.type === 'custom_drop').length + 1
+    return `C${count}`
+  }
 
   const count = markers.filter((marker) => isElectrical(marker.type)).length + 1
   return `E${count}`
 }
 
-function isElectrical(type: MarkerType): type is Exclude<MarkerType, 'wifi'> {
-  return type !== 'wifi'
+function shouldNumberMarkerShape(type: MarkerType) {
+  return isElectrical(type) || type === 'hanging_sign' || type === 'custom_drop'
+}
+
+function getMarkerShapeNumber(marker: UtilityMarker, markers: UtilityMarker[]) {
+  if (!shouldNumberMarkerShape(marker.type)) {
+    return undefined
+  }
+  return markers.filter((candidate) => candidate.type === marker.type).findIndex((candidate) => candidate.id === marker.id) + 1
+}
+
+function isElectrical(type: MarkerType): type is ElectricalMarkerType {
+  return type === '120v' ||
+    type === '208v_single_phase' ||
+    type === '208v_three_phase' ||
+    type === '480v_three_phase'
 }
 
 function getAmpOptions(type: MarkerType) {
@@ -412,6 +449,25 @@ function markerDisplay(type: MarkerType) {
   return markerOptions.find((option) => option.type === type) ?? markerOptions[0]
 }
 
+function getToolbarLabelLines(type: MarkerType) {
+  switch (type) {
+    case '120v':
+      return ['120 V', 'Single']
+    case '208v_single_phase':
+      return ['208 V', 'Single']
+    case '208v_three_phase':
+      return ['208 V', 'Three']
+    case '480v_three_phase':
+      return ['480 V', 'Three']
+    case 'hanging_sign':
+      return ['Hanging', 'Sign']
+    case 'custom_drop':
+      return ['Custom', 'Marker']
+    case 'wifi':
+      return ['WiFi']
+  }
+}
+
 function formatAmps(amps: string | undefined): string {
   return amps ? amps.replace(/A$/, 'AMP') : '-'
 }
@@ -422,6 +478,22 @@ function markerValue(marker: UtilityMarker) {
   }
   if (marker.type === 'wifi') {
     return marker.speed || '-'
+  }
+  if (marker.type === 'hanging_sign') {
+    return marker.hangingSignHeight?.trim() || '-'
+  }
+  if (marker.type === 'custom_drop') {
+    return 'Custom'
+  }
+  return '-'
+}
+
+function markerFlag(marker: UtilityMarker) {
+  if (isElectrical(marker.type)) {
+    return marker.is24Hour ? '24-hour power' : '-'
+  }
+  if (marker.type === 'hanging_sign') {
+    return marker.isRotating ? 'Rotating' : 'Not rotating'
   }
   return '-'
 }
@@ -544,6 +616,26 @@ type PdfGridLayout = {
   height: number
 }
 
+type PdfPlannerView = PlannerState & {
+  allMarkers?: UtilityMarker[]
+  allLines?: UtilityLine[]
+}
+
+type PdfTableColumn = {
+  label: string
+  width: number
+}
+
+type PdfCategory = {
+  title: string
+  markers: UtilityMarker[]
+  lines: UtilityLine[]
+  includeLineLegend?: boolean
+  drawDetails: (doc: jsPDF, planner: PdfPlannerView, startY: number) => number
+}
+
+type PdfMarkerShape = 'triangle' | 'square' | 'diamond' | 'pentagon' | 'circle' | 'hexagon'
+
 function markerPdfPoint(marker: UtilityMarker, booth: BoothDetails, grid: PdfGridLayout) {
   return {
     x: grid.x + (marker.x / booth.width) * grid.width,
@@ -556,6 +648,101 @@ function linePdfEndpoint(line: UtilityLine, booth: BoothDetails, grid: PdfGridLa
     x: grid.x + (line.toX / booth.width) * grid.width,
     y: grid.y + ((booth.depth - line.toY) / booth.depth) * grid.height,
   }
+}
+
+function getPdfMarkerShape(type: MarkerType): PdfMarkerShape {
+  switch (type) {
+    case '120v':
+      return 'triangle'
+    case '208v_single_phase':
+      return 'square'
+    case '208v_three_phase':
+      return 'diamond'
+    case '480v_three_phase':
+      return 'pentagon'
+    case 'hanging_sign':
+      return 'circle'
+    case 'custom_drop':
+      return 'hexagon'
+    case 'wifi':
+      return 'circle'
+  }
+}
+
+function getRegularPolygonPoints(
+  sides: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngleRadians: number,
+) {
+  return Array.from({ length: sides }, (_, index) => {
+    const angle = startAngleRadians + (index * 2 * Math.PI) / sides
+    return {
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+    }
+  })
+}
+
+function drawPdfPolygon(
+  doc: jsPDF,
+  points: Array<{ x: number; y: number }>,
+  style: 'F' | 'FD',
+) {
+  const [firstPoint, ...remainingPoints] = points
+  const vectors = remainingPoints.map((point, index) => {
+    const previousPoint = index === 0 ? firstPoint : remainingPoints[index - 1]
+    return [point.x - previousPoint.x, point.y - previousPoint.y]
+  })
+  doc.lines(vectors, firstPoint.x, firstPoint.y, [1, 1], style, true)
+}
+
+function drawPdfMarkerShape(
+  doc: jsPDF,
+  type: MarkerType,
+  centerX: number,
+  centerY: number,
+  size: number,
+  style: 'F' | 'FD' = 'FD',
+) {
+  const radius = size / 2
+  const shape = getPdfMarkerShape(type)
+
+  if (shape === 'circle') {
+    doc.circle(centerX, centerY, radius, style)
+    return
+  }
+
+  if (shape === 'square') {
+    doc.rect(centerX - radius, centerY - radius, size, size, style)
+    return
+  }
+
+  if (shape === 'diamond') {
+    drawPdfPolygon(doc, [
+      { x: centerX, y: centerY - radius },
+      { x: centerX + radius, y: centerY },
+      { x: centerX, y: centerY + radius },
+      { x: centerX - radius, y: centerY },
+    ], style)
+    return
+  }
+
+  if (shape === 'triangle') {
+    drawPdfPolygon(doc, [
+      { x: centerX, y: centerY - radius },
+      { x: centerX + radius, y: centerY + radius * 0.86 },
+      { x: centerX - radius, y: centerY + radius * 0.86 },
+    ], style)
+    return
+  }
+
+  drawPdfPolygon(
+    doc,
+    getRegularPolygonPoints(shape === 'pentagon' ? 5 : 6, centerX, centerY, radius, shape === 'pentagon' ? -Math.PI / 2 : 0),
+    style,
+  )
 }
 
 function getPdfSideLabel(side: keyof BoothDetails['sideLabels'], booth: BoothDetails) {
@@ -606,8 +793,10 @@ function drawPdfSideLabels(doc: jsPDF, booth: BoothDetails, grid: PdfGridLayout)
   })
 }
 
-async function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayout) {
+async function drawPdfGrid(doc: jsPDF, planner: PdfPlannerView, grid: PdfGridLayout) {
   const { booth, markers, lines, renderImage } = planner
+  const lineMarkerLookup = planner.allMarkers ?? markers
+  const lineLookup = planner.allLines ?? lines
 
   if (renderImage) {
     const fadedImage = await createFadedImageDataUrl(renderImage.dataUrl, renderImage.opacity, {
@@ -633,7 +822,7 @@ async function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayou
   doc.rect(grid.x, grid.y, grid.width, grid.height)
 
   lines.forEach((line, index) => {
-    const startCoords = getLineStartCoords(line, markers, lines)
+    const startCoords = getLineStartCoords(line, lineMarkerLookup, lineLookup)
     if (!startCoords) {
       return
     }
@@ -647,7 +836,7 @@ async function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayou
     doc.line(start.x, start.y, end.x, end.y)
 
     // Length label at midpoint
-    const len = lineLengthFt(line, markers, lines)
+    const len = lineLengthFt(line, lineMarkerLookup, lineLookup)
     if (len !== null && len > 0) {
       const midX = (start.x + end.x) / 2
       const midY = (start.y + end.y) / 2
@@ -702,7 +891,7 @@ async function drawPdfGrid(doc: jsPDF, planner: PlannerState, grid: PdfGridLayou
     doc.setFillColor(r, g, b)
     doc.setDrawColor(255, 255, 255)
     doc.setLineWidth(1)
-    doc.circle(point.x, point.y, 7, 'FD')
+    drawPdfMarkerShape(doc, marker.type, point.x, point.y, 14, 'FD')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7.2)
@@ -729,11 +918,17 @@ function drawPdfFooter(doc: jsPDF) {
   }
 }
 
-function drawLegend(doc: jsPDF, markers: UtilityMarker[], x: number, y: number) {
+function drawLegend(
+  doc: jsPDF,
+  markers: UtilityMarker[],
+  x: number,
+  y: number,
+  options: { includeLines?: boolean } = {},
+) {
   const presentTypes = markerOptions.filter((option) =>
     markers.some((marker) => marker.type === option.type),
   )
-  if (presentTypes.length === 0) {
+  if (presentTypes.length === 0 && !options.includeLines) {
     return y
   }
 
@@ -744,35 +939,51 @@ function drawLegend(doc: jsPDF, markers: UtilityMarker[], x: number, y: number) 
 
   let cursorX = x
   let cursorY = y + 13
-  presentTypes.forEach((option) => {
-    const itemWidth = Math.max(68, doc.getTextWidth(option.label) + 18)
+  const legendItems = [
+    ...presentTypes.map((option) => ({
+      type: option.type,
+      label: option.label,
+      color: markerColors[option.type],
+      kind: 'marker' as const,
+    })),
+    ...(options.includeLines
+      ? [{
+          key: 'line',
+          label: 'Extension Cord',
+          color: '#214670',
+          kind: 'line' as const,
+        }]
+      : []),
+  ]
+
+  legendItems.forEach((item) => {
+    const itemWidth = Math.max(68, doc.getTextWidth(item.label) + 18)
     if (cursorX + itemWidth > 560) {
       cursorX = x
       cursorY += 13
     }
-    const [r, g, b] = hexToRgb(markerColors[option.type])
+    const [r, g, b] = hexToRgb(item.color)
     doc.setFillColor(r, g, b)
-    doc.circle(cursorX + 4, cursorY - 3, 3.5, 'F')
+    doc.setDrawColor(r, g, b)
+    if (item.kind === 'line') {
+      doc.setLineWidth(1.4)
+      doc.line(cursorX, cursorY - 3, cursorX + 8, cursorY - 3)
+      doc.circle(cursorX + 8, cursorY - 3, 2.3, 'F')
+    } else {
+      drawPdfMarkerShape(doc, item.type, cursorX + 4, cursorY - 3, 7, 'F')
+    }
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(55, 65, 81)
     doc.setFontSize(7.5)
-    doc.text(option.label, cursorX + 12, cursorY)
+    doc.text(item.label, cursorX + 12, cursorY)
     cursorX += itemWidth
   })
 
   return cursorY + 10
 }
 
-function drawDropTable(doc: jsPDF, planner: PlannerState, startY: number) {
+function drawPdfTable(doc: jsPDF, columns: PdfTableColumn[], rows: string[][], startY: number) {
   const pageHeight = doc.internal.pageSize.getHeight()
-  const columns = [
-    { label: 'ID', width: 28 },
-    { label: 'Type', width: 112 },
-    { label: 'Location', width: 116 },
-    { label: 'Amps / Speed', width: 64 },
-    { label: '24 Hour', width: 48 },
-    { label: 'Notes', width: 172 },
-  ]
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0)
   let y = startY
 
@@ -792,15 +1003,7 @@ function drawDropTable(doc: jsPDF, planner: PlannerState, startY: number) {
 
   drawHeader()
 
-  planner.markers.forEach((marker, index) => {
-    const cells = [
-      getPdfMarkerId(planner.markers, marker),
-      markerDisplay(marker.type).label,
-      markerLocation(marker),
-      markerValue(marker),
-      isElectrical(marker.type) ? (marker.is24Hour ? 'Yes' : 'No') : '-',
-      marker.notes?.trim() || '-',
-    ]
+  rows.forEach((cells, index) => {
     const cellLines = cells.map((cell, cellIndex) =>
       doc.splitTextToSize(cell, columns[cellIndex].width - 8),
     )
@@ -833,92 +1036,113 @@ function drawDropTable(doc: jsPDF, planner: PlannerState, startY: number) {
   return y
 }
 
-function drawLineTable(doc: jsPDF, planner: PlannerState, startY: number) {
-  const pageHeight = doc.internal.pageSize.getHeight()
+function drawDropTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const columns = [
+    { label: 'ID', width: 28 },
+    { label: 'Type', width: 112 },
+    { label: 'Location', width: 116 },
+    { label: 'Details', width: 64 },
+    { label: 'Option', width: 48 },
+    { label: 'Notes', width: 172 },
+  ]
+  const rows = planner.markers.map((marker) => [
+    getPdfMarkerId(planner.markers, marker),
+    markerDisplay(marker.type).label,
+    markerLocation(marker),
+    markerValue(marker),
+    markerFlag(marker),
+    marker.notes?.trim() || '-',
+  ])
+  return drawPdfTable(doc, columns, rows, startY)
+}
+
+function drawLineTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const markerLookup = planner.allMarkers ?? planner.markers
+  const lineLookup = planner.allLines ?? planner.lines
   const columns = [
     { label: 'ID', width: 44 },
-    { label: 'Connected Drop ID', width: 76 },
-    { label: 'Connected Drop Type', width: 122 },
+    { label: 'Connected To', width: 86 },
+    { label: 'Connected Type', width: 122 },
     { label: 'End Location', width: 154 },
-    { label: 'Notes', width: 144 },
+    { label: 'Notes', width: 134 },
   ]
-  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0)
-  let y = startY
-
-  function drawHeader() {
-    doc.setFillColor(33, 70, 112)
-    doc.rect(PDF_MARGIN, y, tableWidth, PDF_TABLE_HEADER_HEIGHT, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    doc.setTextColor(255, 255, 255)
-    let x = PDF_MARGIN
-    columns.forEach((column) => {
-      doc.text(column.label, x + 4, y + 11)
-      x += column.width
-    })
-    y += PDF_TABLE_HEADER_HEIGHT
-  }
-
-  drawHeader()
-
-  planner.lines.forEach((line, index) => {
+  const rows = planner.lines.map((line, index) => {
     let connectedId = '-'
     let connectedType = '-'
     if (line.fromMarkerId) {
-      const fromMarker = planner.markers.find((m) => m.id === line.fromMarkerId)
-      connectedId = fromMarker ? getPdfMarkerId(planner.markers, fromMarker) : '-'
+      const fromMarker = markerLookup.find((m) => m.id === line.fromMarkerId)
+      connectedId = fromMarker ? `Marker ${getPdfMarkerId(markerLookup, fromMarker)}` : '-'
       connectedType = fromMarker ? markerDisplay(fromMarker.type).label : '-'
     } else if (line.fromLineId) {
-      const fromLine = planner.lines.find((l) => l.id === line.fromLineId)
-      const fromLineIndex = planner.lines.findIndex((l) => l.id === line.fromLineId)
-      connectedId = fromLine ? `${getLineLabel(fromLine, fromLineIndex)} endpoint` : '-'
-      connectedType = 'Line endpoint'
+      const fromLine = lineLookup.find((l) => l.id === line.fromLineId)
+      const fromLineIndex = lineLookup.findIndex((l) => l.id === line.fromLineId)
+      connectedId = fromLine ? `Extension Cord ${getLineLabel(fromLine, fromLineIndex)} endpoint` : '-'
+      connectedType = 'Extension Cord endpoint'
     }
-    const cells = [
+    return [
       getLineLabel(line, index),
       connectedId,
       connectedType,
       lineLocation(line),
       line.notes?.trim() || '-',
     ]
-    const cellLines = cells.map((cell, cellIndex) =>
-      doc.splitTextToSize(cell, columns[cellIndex].width - 8),
-    )
-    const rowHeight = Math.max(
-      PDF_TABLE_ROW_MIN_HEIGHT,
-      Math.max(...cellLines.map((lines) => lines.length)) * PDF_TABLE_LINE_HEIGHT + 6,
-    )
-
-    if (y + rowHeight > pageHeight - PDF_TABLE_BOTTOM_PADDING) {
-      doc.addPage()
-      y = PDF_MARGIN
-      drawHeader()
-    }
-
-    doc.setFillColor(index % 2 === 0 ? 248 : 255, index % 2 === 0 ? 250 : 255, index % 2 === 0 ? 252 : 255)
-    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight, 'F')
-    doc.setDrawColor(226, 232, 240)
-    doc.rect(PDF_MARGIN, y, tableWidth, rowHeight)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.8)
-    doc.setTextColor(31, 41, 55)
-    let x = PDF_MARGIN
-    cellLines.forEach((lines, cellIndex) => {
-      doc.text(lines, x + 4, y + 10)
-      x += columns[cellIndex].width
-    })
-    y += rowHeight
   })
-
-  return y
+  return drawPdfTable(doc, columns, rows, startY)
 }
 
-async function exportPlannerPdf(planner: PlannerState) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const logoImage = await svgAssetToPngDataUrl(sourceOneLogoPath)
+function drawWifiTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const columns = [
+    { label: 'ID', width: 32 },
+    { label: 'Location', width: 168 },
+    { label: 'Speed', width: 110 },
+    { label: 'Notes', width: 230 },
+  ]
+  const rows = planner.markers.map((marker) => [
+    getPdfMarkerId(planner.markers, marker),
+    markerLocation(marker),
+    marker.speed || '-',
+    marker.notes?.trim() || '-',
+  ])
+  return drawPdfTable(doc, columns, rows, startY)
+}
 
+function drawHangingSignTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const columns = [
+    { label: 'ID', width: 32 },
+    { label: 'Location', width: 148 },
+    { label: 'Height From Ground', width: 114 },
+    { label: 'Rotating', width: 66 },
+    { label: 'Notes', width: 180 },
+  ]
+  const rows = planner.markers.map((marker) => [
+    getPdfMarkerId(planner.markers, marker),
+    markerLocation(marker),
+    marker.hangingSignHeight?.trim() || '-',
+    marker.isRotating ? 'Yes' : 'No',
+    marker.notes?.trim() || '-',
+  ])
+  return drawPdfTable(doc, columns, rows, startY)
+}
+
+function drawCustomMarkerTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const columns = [
+    { label: 'ID', width: 32 },
+    { label: 'Location', width: 188 },
+    { label: 'Notes', width: 320 },
+  ]
+  const rows = planner.markers.map((marker) => [
+    getPdfMarkerId(planner.markers, marker),
+    markerLocation(marker),
+    marker.notes?.trim() || '-',
+  ])
+  return drawPdfTable(doc, columns, rows, startY)
+}
+
+function drawPdfPageHeader(
+  doc: jsPDF,
+  planner: PlannerState,
+  logoImage: { dataUrl: string; width: number; height: number } | null,
+) {
   if (logoImage) {
     const logoSize = fitPdfImage(
       logoImage.width,
@@ -948,47 +1172,143 @@ async function exportPlannerPdf(planner: PlannerState) {
     PDF_MARGIN,
     109,
   )
+}
 
+function getPdfGridLayout(doc: jsPDF, booth: BoothDetails): PdfGridLayout {
+  const pageWidth = doc.internal.pageSize.getWidth()
   const gridMaxWidth = pageWidth - PDF_MARGIN * 2 - 52
   const gridMaxHeight = 276
   const gridScale = Math.min(
-    gridMaxWidth / planner.booth.width,
-    gridMaxHeight / planner.booth.depth,
+    gridMaxWidth / booth.width,
+    gridMaxHeight / booth.depth,
   )
-  const grid = {
-    width: planner.booth.width * gridScale,
-    height: planner.booth.depth * gridScale,
-    x: PDF_MARGIN + 26 + (gridMaxWidth - planner.booth.width * gridScale) / 2,
+
+  return {
+    width: booth.width * gridScale,
+    height: booth.depth * gridScale,
+    x: PDF_MARGIN + 26 + (gridMaxWidth - booth.width * gridScale) / 2,
     y: 156,
   }
+}
 
-  await drawPdfGrid(doc, planner, grid)
-  let y = grid.y + grid.height + 36
-  y = drawLegend(doc, planner.markers, PDF_MARGIN, y)
-  y += 8
+function drawPdfSectionTitle(doc: jsPDF, title: string, y: number) {
   doc.setTextColor(17, 24, 39)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
-  doc.text('Drop Details', PDF_MARGIN, y)
-  y = drawDropTable(doc, planner, y + 8)
+  doc.text(title, PDF_MARGIN, y)
+}
 
+function drawElectricalDetails(doc: jsPDF, planner: PdfPlannerView, startY: number) {
+  const pageHeight = doc.internal.pageSize.getHeight()
+  let y = startY
+
+  if (planner.markers.length > 0) {
+    drawPdfSectionTitle(doc, 'Drop Details', y)
+    y = drawDropTable(doc, planner, y + 8)
+  }
   if (planner.lines.length > 0) {
-    y += 12
+    y += planner.markers.length > 0 ? 12 : 0
     if (y > pageHeight - 72) {
       doc.addPage()
       y = PDF_MARGIN
     }
-    doc.setTextColor(17, 24, 39)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.text('Line Details', PDF_MARGIN, y)
+    drawPdfSectionTitle(doc, 'Extension Cord Details', y)
     y = drawLineTable(doc, planner, y + 8)
   }
 
-  if (y > pageHeight - PDF_TABLE_BOTTOM_PADDING) {
-    doc.addPage()
+  return y
+}
+
+function drawMarkerDetails(
+  title: string,
+  drawTable: (doc: jsPDF, planner: PdfPlannerView, startY: number) => number,
+) {
+  return (doc: jsPDF, planner: PdfPlannerView, startY: number) => {
+    drawPdfSectionTitle(doc, title, startY)
+    return drawTable(doc, planner, startY + 8)
+  }
+}
+
+function getPdfCategories(planner: PlannerState): PdfCategory[] {
+  const electricalMarkers = planner.markers.filter((marker) => isElectrical(marker.type))
+  const wifiMarkers = planner.markers.filter((marker) => marker.type === 'wifi')
+  const hangingSignMarkers = planner.markers.filter((marker) => marker.type === 'hanging_sign')
+  const customMarkers = planner.markers.filter((marker) => marker.type === 'custom_drop')
+  const categories: PdfCategory[] = [
+    {
+      title: 'Electrical + Extension Cords',
+      markers: electricalMarkers,
+      lines: planner.lines,
+      includeLineLegend: planner.lines.length > 0,
+      drawDetails: drawElectricalDetails,
+    },
+    {
+      title: 'WiFi',
+      markers: wifiMarkers,
+      lines: [],
+      drawDetails: drawMarkerDetails('WiFi Details', drawWifiTable),
+    },
+    {
+      title: 'Hanging Sign',
+      markers: hangingSignMarkers,
+      lines: [],
+      drawDetails: drawMarkerDetails('Hanging Sign Details', drawHangingSignTable),
+    },
+    {
+      title: 'Custom Marker',
+      markers: customMarkers,
+      lines: [],
+      drawDetails: drawMarkerDetails('Custom Marker Details', drawCustomMarkerTable),
+    },
+  ]
+
+  return categories.filter((category) => category.markers.length > 0 || category.lines.length > 0)
+}
+
+async function drawPdfCategoryPage(
+  doc: jsPDF,
+  planner: PlannerState,
+  category: PdfCategory,
+  logoImage: { dataUrl: string; width: number; height: number } | null,
+) {
+  drawPdfPageHeader(doc, planner, logoImage)
+  doc.setTextColor(33, 70, 112)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.text(category.title, PDF_MARGIN, 126)
+  const grid = getPdfGridLayout(doc, planner.booth)
+  const pagePlanner: PdfPlannerView = {
+    ...planner,
+    markers: category.markers,
+    lines: category.lines,
+    allMarkers: planner.markers,
+    allLines: planner.lines,
   }
 
+  await drawPdfGrid(doc, pagePlanner, grid)
+  let y = grid.y + grid.height + 36
+  y = drawLegend(doc, category.markers, PDF_MARGIN, y, {
+    includeLines: category.includeLineLegend,
+  })
+  y += 8
+  category.drawDetails(doc, pagePlanner, y)
+}
+
+async function exportPlannerPdf(planner: PlannerState) {
+  const categories = getPdfCategories(planner)
+  if (categories.length === 0) {
+    return
+  }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+  const logoImage = await svgAssetToPngDataUrl(sourceOneLogoPath)
+
+  for (const [index, category] of categories.entries()) {
+    if (index > 0) {
+      doc.addPage()
+    }
+    await drawPdfCategoryPage(doc, planner, category, logoImage)
+  }
   drawPdfFooter(doc)
 
   const filename = planner.booth.boothNumber
@@ -1009,7 +1329,11 @@ function readInitialState(): PlannerState {
       ? parsed.markers
           .map((marker) => {
             const legacyType = marker.type as string
-            const migratedType: MarkerType = legacyType === 'main_drop' ? '120v' : (legacyType as MarkerType)
+            const migratedType: MarkerType = legacyType === 'main_drop'
+              ? '120v'
+              : legacyType === 'custom_marker'
+                ? 'custom_drop'
+                : (legacyType as MarkerType)
             if (!markerOptions.some((option) => option.type === migratedType)) {
               return null
             }
@@ -1019,6 +1343,8 @@ function readInitialState(): PlannerState {
               amps: getValidAmp(migratedType, marker.amps),
               speed: migratedType === 'wifi' ? marker.speed || 'Standard' : undefined,
               is24Hour: isElectrical(migratedType) ? Boolean(marker.is24Hour) : false,
+              hangingSignHeight: migratedType === 'hanging_sign' ? String(marker.hangingSignHeight || '') : undefined,
+              isRotating: migratedType === 'hanging_sign' ? Boolean(marker.isRotating) : false,
               notes: marker.notes || '',
             } as UtilityMarker
           })
@@ -1386,7 +1712,7 @@ function App() {
   const [lineStartMarkerId, setLineStartMarkerId] = useState<string | null>(null)
   const [lineStartLineId, setLineStartLineId] = useState<string | null>(null)
   const [draggingLineEndId, setDraggingLineEndId] = useState<string | null>(null)
-  const [openPanelSectionId, setOpenPanelSectionId] = useState<string | null>(null)
+  const [openPanelSectionId, setOpenPanelSectionId] = useState<string | null>('help')
   const [ampPromptMarkerId, setAmpPromptMarkerId] = useState<string | null>(null)
   const [panStart, setPanStart] = useState<{
     clientX: number
@@ -1549,7 +1875,7 @@ function App() {
     }))
   }
 
-  function deleteMarker(id: string) {
+  const deleteMarker = useCallback((id: string) => {
     setPlanner((current) => {
       const directlyRemovedIds = new Set(
         current.lines.filter((l) => l.fromMarkerId === id).map((l) => l.id),
@@ -1568,15 +1894,15 @@ function App() {
       planner.lines.some((line) => line.id === current && line.fromMarkerId === id) ? null : current,
     )
     setAmpPromptMarkerId(null)
-  }
+  }, [planner.lines])
 
-  function deleteLine(id: string) {
+  const deleteLine = useCallback((id: string) => {
     setPlanner((current) => ({
       ...current,
       lines: current.lines.filter((line) => line.id !== id && line.fromLineId !== id),
     }))
     setSelectedLineId(null)
-  }
+  }, [])
 
   function placeMarker(clientX: number, clientY: number) {
     if (isPanMode || isPointerMode || isLineMode) {
@@ -1596,6 +1922,8 @@ function App() {
       amps: getDefaultAmp(planner.selectedTool),
       speed: planner.selectedTool === 'wifi' ? 'Standard' : undefined,
       is24Hour: false,
+      hangingSignHeight: planner.selectedTool === 'hanging_sign' ? '' : undefined,
+      isRotating: false,
       notes: '',
     }
 
@@ -1841,14 +2169,6 @@ function App() {
       }
 
       const key = event.key.toLowerCase()
-      const shortcutToolMap: Record<string, MarkerType> = {
-        '6': '120v',
-        '7': '208v_single_phase',
-        '8': '208v_three_phase',
-        '9': '480v_three_phase',
-        '0': 'wifi',
-      }
-
       if (key === '1') {
         event.preventDefault()
         selectPointerMode()
@@ -1874,24 +2194,38 @@ function App() {
         fitScreen()
         return
       }
-      if (shortcutToolMap[key]) {
-        event.preventDefault()
-        selectTool(shortcutToolMap[key])
-        return
-      }
-      if (key === 'l') {
-        event.preventDefault()
-        selectLineTool()
-      }
     }
 
     window.addEventListener('keydown', handleToolbarShortcut)
     return () => window.removeEventListener('keydown', handleToolbarShortcut)
   }, [zoom])
 
+  useEffect(() => {
+    function handleSelectedItemDelete(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.key !== 'Delete' || isEditableShortcutTarget(event.target)) {
+        return
+      }
+
+      if (selectedMarkerId) {
+        event.preventDefault()
+        deleteMarker(selectedMarkerId)
+        return
+      }
+
+      if (selectedLineId) {
+        event.preventDefault()
+        deleteLine(selectedLineId)
+      }
+    }
+
+    window.addEventListener('keydown', handleSelectedItemDelete)
+    return () => window.removeEventListener('keydown', handleSelectedItemDelete)
+  }, [deleteLine, deleteMarker, selectedLineId, selectedMarkerId])
+
   async function handleExportPdf() {
-    if (planner.markers.length === 0) {
-      window.alert('No drops have been placed yet. The PDF will export an empty booth layout.')
+    if (planner.markers.length === 0 && planner.lines.length === 0) {
+      window.alert('Add at least one utility marker or extension cord before exporting.')
+      return
     }
 
     setExportStatus('Generating PDF...')
@@ -2030,12 +2364,10 @@ function App() {
                   <MarkerTypeIcon
                     type={marker.type}
                     size={15}
-                    number={isElectrical(marker.type)
-                      ? planner.markers.filter((m) => m.type === marker.type).findIndex((m) => m.id === marker.id) + 1
-                      : undefined}
+                    number={getMarkerShapeNumber(marker, planner.markers)}
                   />
                   <span className="marker-copy">
-                    <span className="marker-label">{display.short}</span>
+                    <span className="marker-label">{marker.label || display.short}</span>
                     {isElectrical(marker.type) && marker.amps && (
                       <span className="marker-amps">{marker.amps.replace(/A$/, 'AMP')}</span>
                     )}
@@ -2045,6 +2377,9 @@ function App() {
                     {marker.type === 'wifi' && marker.speed && (
                       <span className="marker-amps">{marker.speed}</span>
                     )}
+                    {marker.type === 'hanging_sign' && marker.hangingSignHeight && (
+                      <span className="marker-amps">{marker.hangingSignHeight}</span>
+                    )}
                   </span>
                 </button>
               )
@@ -2052,8 +2387,8 @@ function App() {
             {isLineMode && (
               <div className="line-start-hint" aria-live="polite">
                 {lineStartMarkerId || lineStartLineId
-                  ? 'Click a grid point to finish the line.'
-                  : 'Click a drop or line endpoint to start the line.'}
+                  ? 'Click a grid point to finish the extension cord.'
+                  : 'Click a drop or extension cord endpoint to start the extension cord.'}
               </div>
             )}
             {planner.lines.map((line, index) => {
@@ -2495,103 +2830,124 @@ function BottomToolbar({
   onTogglePan: () => void
   onSelectPointer: () => void
 }) {
+  const markerToolsBeforeLine = markerOptions.filter((option) =>
+    option.type !== 'wifi' && option.type !== 'hanging_sign' && option.type !== 'custom_drop'
+  )
+  const markerToolsAfterLine = markerOptions.filter((option) =>
+    option.type === 'wifi' || option.type === 'hanging_sign' || option.type === 'custom_drop'
+  )
+  const renderMarkerTool = (option: (typeof markerOptions)[number]) => {
+    const activeStyle = {
+      '--active-color': markerColors[option.type],
+    } as CSSProperties
+    return (
+      <button
+        key={option.type}
+        type="button"
+        className={`toolbar-button toolbar-tool-button tool-${option.type} ${
+          !isPanMode && !isPointerMode && !isLineMode && selectedTool === option.type ? 'is-active' : ''
+        }`}
+        style={activeStyle}
+        title={option.label}
+        aria-label={option.label}
+        onClick={() => onSelectTool(option.type)}
+      >
+        <MarkerTypeIcon type={option.type} size={17} />
+        <span className="toolbar-label-stack">
+          {getToolbarLabelLines(option.type).map((labelLine) => (
+            <span key={labelLine}>{labelLine}</span>
+          ))}
+        </span>
+      </button>
+    )
+  }
+
   return (
     <nav className="bottom-toolbar" aria-label="Utility placement tools">
-      <button
-        type="button"
-        className={`toolbar-button toolbar-button-compact ${isPointerMode ? 'is-active' : ''}`}
-        title="Pointer / Select (1)"
-        aria-label="Pointer / Select, shortcut 1"
-        onClick={onSelectPointer}
-      >
-        <span className="shortcut-badge">1</span>
-        <MousePointer2 size={17} />
-      </button>
-      <button
-        type="button"
-        className={`toolbar-button toolbar-button-compact ${isPanMode ? 'is-active' : ''}`}
-        title="Pan canvas (2)"
-        aria-label="Pan canvas, shortcut 2"
-        onClick={onTogglePan}
-      >
-        <span className="shortcut-badge">2</span>
-        <Hand size={17} />
-      </button>
-      <div className="zoom-control-group" aria-label="Zoom controls">
-        <button
-          type="button"
-          className="zoom-icon-button"
-          title="Zoom in (3)"
-          aria-label="Zoom in, shortcut 3"
-          onClick={onZoomIn}
-        >
-          <span className="shortcut-badge">3</span>
-          <ZoomIn size={17} />
-        </button>
-        <span className="zoom-level">{Math.round(Math.max(zoom, MIN_ZOOM) * 100)}%</span>
-        <button
-          type="button"
-          className="zoom-icon-button"
-          title="Zoom out (4)"
-          aria-label="Zoom out, shortcut 4"
-          onClick={onZoomOut}
-          disabled={zoom <= MIN_ZOOM}
-        >
-          <span className="shortcut-badge">4</span>
-          <ZoomOut size={17} />
-        </button>
-      </div>
-      <button
-        type="button"
-        className="toolbar-button toolbar-button-compact"
-        title="Fit screen (5)"
-        aria-label="Fit screen, shortcut 5"
-        onClick={onZoomReset}
-      >
-        <span className="shortcut-badge">5</span>
-        <Maximize2 size={16} />
-      </button>
-      <div className="toolbar-divider" aria-hidden="true" />
-      {markerOptions.map((option) => {
-        const shortcutByType: Record<MarkerType, string> = {
-          '120v': '6',
-          '208v_single_phase': '7',
-          '208v_three_phase': '8',
-          '480v_three_phase': '9',
-          wifi: '0',
-        }
-        const activeStyle = {
-          '--active-color': markerColors[option.type],
-        } as CSSProperties
-        return (
+      <div className="toolbar-group">
+        <span className="toolbar-group-label">Canvas Tools</span>
+        <div className="toolbar-group-controls">
           <button
-            key={option.type}
             type="button"
-            className={`toolbar-button tool-${option.type} ${
-              !isPanMode && !isPointerMode && !isLineMode && selectedTool === option.type ? 'is-active' : ''
-            }`}
-            style={activeStyle}
-            title={`${option.label} (${shortcutByType[option.type]})`}
-            aria-label={`${option.label}, shortcut ${shortcutByType[option.type]}`}
-            onClick={() => onSelectTool(option.type)}
+            className={`toolbar-button toolbar-button-compact ${isPointerMode ? 'is-active' : ''}`}
+            title="Pointer / Select (1)"
+            aria-label="Pointer / Select, shortcut 1"
+            onClick={onSelectPointer}
           >
-            <span className="shortcut-badge">{shortcutByType[option.type]}</span>
-            <MarkerTypeIcon type={option.type} size={17} />
-            <span>{option.label}</span>
+            <span className="shortcut-badge">1</span>
+            <MousePointer2 size={17} />
           </button>
-        )
-      })}
-      <button
-        type="button"
-        className={`toolbar-button tool-line ${isLineMode ? 'is-active' : ''}`}
-        title="Line (L)"
-        aria-label="Line, shortcut L"
-        onClick={onSelectLineTool}
-      >
-        <span className="shortcut-badge">L</span>
-        <LineToolIcon size={17} />
-        <span>Line</span>
-      </button>
+          <button
+            type="button"
+            className={`toolbar-button toolbar-button-compact ${isPanMode ? 'is-active' : ''}`}
+            title="Pan canvas (2)"
+            aria-label="Pan canvas, shortcut 2"
+            onClick={onTogglePan}
+          >
+            <span className="shortcut-badge">2</span>
+            <Hand size={17} />
+          </button>
+          <div className="zoom-control-group" aria-label="Zoom controls">
+            <button
+              type="button"
+              className="zoom-icon-button"
+              title="Zoom in (3)"
+              aria-label="Zoom in, shortcut 3"
+              onClick={onZoomIn}
+            >
+              <span className="shortcut-badge">3</span>
+              <ZoomIn size={17} />
+            </button>
+            <span className="zoom-level">{Math.round(Math.max(zoom, MIN_ZOOM) * 100)}%</span>
+            <button
+              type="button"
+              className="zoom-icon-button"
+              title="Zoom out (4)"
+              aria-label="Zoom out, shortcut 4"
+              onClick={onZoomOut}
+              disabled={zoom <= MIN_ZOOM}
+            >
+              <span className="shortcut-badge">4</span>
+              <ZoomOut size={17} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="toolbar-button toolbar-button-compact"
+            title="Fit screen (5)"
+            aria-label="Fit screen, shortcut 5"
+            onClick={onZoomReset}
+          >
+            <span className="shortcut-badge">5</span>
+            <Maximize2 size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="toolbar-group toolbar-group-separated">
+        <span className="toolbar-group-label">Power &amp; Cords</span>
+        <div className="toolbar-group-controls">
+          {markerToolsBeforeLine.map(renderMarkerTool)}
+          <button
+            type="button"
+            className={`toolbar-button toolbar-tool-button tool-line ${isLineMode ? 'is-active' : ''}`}
+            title="Extension Cord"
+            aria-label="Extension Cord"
+            onClick={onSelectLineTool}
+          >
+            <LineToolIcon size={17} />
+            <span className="toolbar-label-stack">
+              <span>Extension</span>
+              <span>Cord</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div className="toolbar-group toolbar-group-separated">
+        <span className="toolbar-group-label">Additional Utilities</span>
+        <div className="toolbar-group-controls">
+          {markerToolsAfterLine.map(renderMarkerTool)}
+        </div>
+      </div>
     </nav>
   )
 }
@@ -2659,6 +3015,36 @@ function RightPanel({
           <h2>Booth Utility Planner</h2>
         </div>
       </div>
+
+      <PanelSection
+        id="help"
+        title="Help / How to Use"
+        isOpen={openSectionId === 'help'}
+        onToggle={onToggleSection}
+      >
+        <ol className="how-to-list">
+          <li>Confirm your event and booth information under Booth Details.</li>
+          <li>
+            Add neighboring booth numbers for Front, Back, Left, and Right under Booth Position, or click the labels around the
+            grid.
+          </li>
+          <li>Select a power drop from the bottom toolbar.</li>
+          <li>Then click on the grid where the power drop should be placed.</li>
+          <li>With the power drop selected, update information under Selected Item.</li>
+          <li>
+            Add an extension cord if needed by clicking a power drop first, then clicking the extension cord endpoint on
+            the grid.
+          </li>
+          <li>Optional: Upload a top-down booth layout using Booth Image Upload.</li>
+          <li>
+            Export your layout as a PDF and email it to{' '}
+            <a href="mailto:exhibitorservices@sourceoneevents.com">
+              exhibitorservices@sourceoneevents.com
+            </a>
+            .
+          </li>
+        </ol>
+      </PanelSection>
 
       <PanelSection
         id="booth-details"
@@ -2735,28 +3121,32 @@ function RightPanel({
             <div className="coordinate-readout">
               {markerDisplay(selectedMarker.type).label}
             </div>
-            <label className="field-group">
-              <span className="field-label">Type</span>
-              <select
-                value={selectedMarker.type}
-                onChange={(event) => {
-                  const type = event.target.value as MarkerType
-                  onMarkerChange(selectedMarker.id, {
-                    type,
-                    amps: getValidAmp(type, selectedMarker.amps),
-                    speed: type === 'wifi' ? selectedMarker.speed || 'Standard' : undefined,
-                    is24Hour: isElectrical(type) ? selectedMarker.is24Hour : false,
-                  })
-                  onToolChange(type)
-                }}
-              >
-                {markerOptions.map((option) => (
-                  <option key={option.type} value={option.type}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {selectedMarker.type !== 'hanging_sign' && selectedMarker.type !== 'custom_drop' && (
+              <label className="field-group">
+                <span className="field-label">Type</span>
+                <select
+                  value={selectedMarker.type}
+                  onChange={(event) => {
+                    const type = event.target.value as MarkerType
+                    onMarkerChange(selectedMarker.id, {
+                      type,
+                      amps: getValidAmp(type, selectedMarker.amps),
+                      speed: type === 'wifi' ? selectedMarker.speed || 'Standard' : undefined,
+                      is24Hour: isElectrical(type) ? selectedMarker.is24Hour : false,
+                      hangingSignHeight: type === 'hanging_sign' ? selectedMarker.hangingSignHeight || '' : undefined,
+                      isRotating: type === 'hanging_sign' ? Boolean(selectedMarker.isRotating) : false,
+                    })
+                    onToolChange(type)
+                  }}
+                >
+                  {markerOptions.map((option) => (
+                    <option key={option.type} value={option.type}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {(() => {
               const edges = getEdgeDistances(selectedMarker.x, selectedMarker.y, planner.booth)
               return (
@@ -2807,6 +3197,23 @@ function RightPanel({
                 </select>
               </label>
             )}
+            {selectedMarker.type === 'hanging_sign' && (
+              <>
+                <TextField
+                  label="How far is the hanging sign from the ground?"
+                  value={selectedMarker.hangingSignHeight || ''}
+                  onChange={(value) => onMarkerChange(selectedMarker.id, { hangingSignHeight: value })}
+                />
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedMarker.isRotating)}
+                    onChange={(event) => onMarkerChange(selectedMarker.id, { isRotating: event.target.checked })}
+                  />
+                  <span>Sign is rotating</span>
+                </label>
+              </>
+            )}
             <label className="field-group">
               <span className="field-label">Notes</span>
               <textarea
@@ -2823,7 +3230,7 @@ function RightPanel({
         ) : selectedLine ? (
           <div className="selected-drop-fields">
             <TextField
-              label="Line Label"
+              label="Extension Cord Label"
               value={selectedLine.label || ''}
               onChange={(value) => onLineChange(selectedLine.id, { label: value })}
             />
@@ -2842,11 +3249,11 @@ function RightPanel({
             </label>
             <button type="button" className="danger-button" onClick={() => onLineDelete(selectedLine.id)}>
               <Trash2 size={16} />
-              Delete line
+              Delete extension cord
             </button>
           </div>
         ) : (
-          <p className="panel-note">Please select a drop or line on the grid to edit its details.</p>
+          <p className="panel-note">Please select a drop or extension cord on the grid to edit its details.</p>
         )}
       </PanelSection>
 
@@ -2911,28 +3318,6 @@ function RightPanel({
           Export PDF
         </button>
         {exportStatus && <p className="export-status">{exportStatus}</p>}
-      </PanelSection>
-
-      <PanelSection
-        id="help"
-        title="Help"
-        isOpen={openSectionId === 'help'}
-        onToggle={onToggleSection}
-      >
-        <div className="help-list">
-          <p>
-            <strong>Email:</strong>{' '}
-            <a href="mailto:exhibitorservices@sourceoneevents.com">
-              exhibitorservices@sourceoneevents.com
-            </a>
-          </p>
-          <p>
-            <strong>Phone:</strong> <a href="tel:7083443050">708.344.3050</a>
-          </p>
-          <p>
-            <strong>Fax:</strong> 708.344.4111
-          </p>
-        </div>
       </PanelSection>
 
       <footer className="panel-footer">

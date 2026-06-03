@@ -483,19 +483,50 @@
   left: 50%;
   z-index: 12;
   display: inline-flex;
+  align-items: stretch;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   width: max-content;
-  max-width: min(1040px, calc(100vw - 56px));
-  min-height: 56px;
+  max-width: min(1280px, calc(100vw - 56px));
+  min-height: 60px;
   overflow-x: auto;
   transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.92);
-  padding: 8px;
+  padding: 7px 8px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
+}
+
+.toolbar-group {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-items: end;
+  gap: 3px;
+  min-width: max-content;
+}
+
+.toolbar-group-separated {
+  border-left: 1px solid #d9dee7;
+  padding-left: 8px;
+}
+
+.toolbar-group-label {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.toolbar-group-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: max-content;
 }
 
 .bottom-toolbar button {
@@ -503,7 +534,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
   min-height: 38px;
   cursor: pointer;
@@ -511,15 +542,61 @@
   border-radius: 6px;
   background: #fff;
   color: #374151;
-  padding: 8px 10px 8px 12px;
-  font-size: 12px;
+  padding: 8px;
+  font-size: 11px;
   font-weight: 800;
+  line-height: 1;
   white-space: nowrap;
   transition:
     border-color 160ms ease,
     background 160ms ease,
     color 160ms ease,
     box-shadow 160ms ease;
+}
+
+.bottom-toolbar button > svg,
+.bottom-toolbar button .nested-shape-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.bottom-toolbar .toolbar-tool-button {
+  min-width: 54px;
+  min-height: 38px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 9px;
+}
+
+.bottom-toolbar .toolbar-tool-button > svg,
+.bottom-toolbar .toolbar-tool-button .nested-shape-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+}
+
+.bottom-toolbar .toolbar-tool-button > span:not(.toolbar-label-stack) {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.bottom-toolbar .toolbar-tool-button > .toolbar-label-stack {
+  display: inline-grid;
+  grid-auto-flow: row;
+  grid-auto-rows: max-content;
+  gap: 1px;
+  min-width: 0;
+  align-items: center;
+  justify-items: start;
+  flex: 0 1 auto;
+  line-height: 0.98;
+  white-space: normal;
+}
+
+.bottom-toolbar .toolbar-tool-button > .toolbar-label-stack > span {
+  display: block;
+  white-space: nowrap;
 }
 
 .bottom-toolbar button:hover {
@@ -547,18 +624,6 @@
   min-width: 38px;
   width: 38px;
   padding: 8px;
-}
-
-.bottom-toolbar .tool-wifi {
-  min-width: 0;
-  padding-right: 9px;
-  padding-left: 9px;
-}
-
-.toolbar-divider {
-  width: 1px;
-  min-height: 38px;
-  background: #d9dee7;
 }
 
 .shortcut-badge {
@@ -682,6 +747,36 @@
 }
 
 .help-list a:hover {
+  text-decoration: underline;
+}
+
+.how-to-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.38;
+}
+
+.how-to-list li {
+  padding-left: 2px;
+}
+
+.how-to-list li::marker {
+  color: var(--sourceone-blue);
+  font-weight: 850;
+}
+
+.how-to-list a {
+  color: var(--sourceone-blue);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.how-to-list a:hover {
   text-decoration: underline;
 }
 
