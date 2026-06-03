@@ -468,6 +468,25 @@ function getToolbarLabelLines(type: MarkerType) {
   }
 }
 
+function getGridMarkerDisplayLabel(type: MarkerType) {
+  switch (type) {
+    case '120v':
+      return '120 V S'
+    case '208v_single_phase':
+      return '208 V S'
+    case '208v_three_phase':
+      return '208 V T'
+    case '480v_three_phase':
+      return '480 V T'
+    case 'wifi':
+      return 'WiFi'
+    case 'hanging_sign':
+      return 'Hanging'
+    case 'custom_drop':
+      return 'Custom'
+  }
+}
+
 function formatAmps(amps: string | undefined): string {
   return amps ? amps.replace(/A$/, 'AMP') : '-'
 }
@@ -2330,9 +2349,7 @@ function App() {
                 isSelected={marker.id === selectedMarkerId}
               />
             ))}
-            {planner.markers.map((marker, index) => {
-              const display = markerDisplay(marker.type)
-              return (
+            {planner.markers.map((marker, index) => (
                 <button
                   key={marker.id}
                   type="button"
@@ -2367,7 +2384,7 @@ function App() {
                     number={getMarkerShapeNumber(marker, planner.markers)}
                   />
                   <span className="marker-copy">
-                    <span className="marker-label">{marker.label || display.short}</span>
+                    <span className="marker-label">{getGridMarkerDisplayLabel(marker.type)}</span>
                     {isElectrical(marker.type) && marker.amps && (
                       <span className="marker-amps">{marker.amps.replace(/A$/, 'AMP')}</span>
                     )}
@@ -2382,8 +2399,7 @@ function App() {
                     )}
                   </span>
                 </button>
-              )
-            })}
+            ))}
             {isLineMode && (
               <div className="line-start-hint" aria-live="polite">
                 {lineStartMarkerId || lineStartLineId
