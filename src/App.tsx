@@ -109,9 +109,13 @@ type RenderCropRequest = {
 const STORAGE_KEY = 'sourceone-booth-utility-planner'
 const SNAP_FEET = 0.5
 const DEFAULT_TOOL: MarkerType = '120v'
-const MIN_ZOOM = 0.25
+const MIN_ZOOM = 1
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.25
+const LARGE_GRID_THRESHOLD_FT = 50
+const LARGE_GRID_CELL_PX = 24
+const GRID_MAX_CELL_PX = 64
+const GRID_MIN_CELL_PX = 5
 const ASPECT_RATIO_TOLERANCE = 0.01
 const MAX_RENDER_UPLOAD_BYTES = 5 * 1024 * 1024
 const DEFAULT_RENDER_OPACITY = 0.32
@@ -292,6 +296,14 @@ function isSupportedRenderFile(file: File) {
     file.type === 'image/png' ||
     /\.(jpe?g|png)$/i.test(file.name)
   )
+}
+
+function isEditableShortcutTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return target.isContentEditable || Boolean(target.closest('input, textarea, select, [contenteditable]'))
 }
 
 function readImageFile(file: File) {
@@ -1388,14 +1400,19 @@ function App() {
   const selectedLine = planner.lines.find((line) => line.id === selectedLineId)
 
   const gridMetrics = useMemo(() => {
-    const maxCell = 64
-    const minCell = 5
+    const isLargeGrid =
+      planner.booth.width > LARGE_GRID_THRESHOLD_FT ||
+      planner.booth.depth > LARGE_GRID_THRESHOLD_FT
     const availableWidth = Math.max(260, stageSize.width - 300)
     const availableHeight = Math.max(260, stageSize.height - 270)
-    const scale = Math.max(
-      minCell,
-      Math.min(maxCell, availableWidth / planner.booth.width, availableHeight / planner.booth.depth),
+    const fitScale = Math.min(
+      availableWidth / planner.booth.width,
+      availableHeight / planner.booth.depth,
     )
+    const scale = isLargeGrid
+      ? LARGE_GRID_CELL_PX
+      : clamp(fitScale, GRID_MIN_CELL_PX, GRID_MAX_CELL_PX)
+
     return {
       scale,
       widthPx: planner.booth.width * scale,
@@ -1768,6 +1785,11 @@ function App() {
     setZoom(clamp(nextZoom, MIN_ZOOM, MAX_ZOOM))
   }
 
+  function fitScreen() {
+    setZoom(1)
+    setPanOffset({ x: 0, y: 0 })
+  }
+
   function selectTool(selectedTool: MarkerType) {
     setIsPanMode(false)
     setIsPointerMode(false)
@@ -1787,6 +1809,85 @@ function App() {
     setLineStartMarkerId(null)
     setLineStartLineId(null)
   }
+
+  function selectPanMode() {
+    setDraggingId(null)
+    setLineStartMarkerId(null)
+    setIsLineMode(false)
+    setIsPointerMode(false)
+    setIsPanMode(true)
+  }
+
+  function togglePanMode() {
+    setDraggingId(null)
+    setLineStartMarkerId(null)
+    setIsLineMode(false)
+    setIsPointerMode(false)
+    setIsPanMode((current) => !current)
+  }
+
+  function selectPointerMode() {
+    setDraggingId(null)
+    setIsPanMode(false)
+    setIsLineMode(false)
+    setLineStartMarkerId(null)
+    setIsPointerMode(true)
+  }
+
+  useEffect(() => {
+    function handleToolbarShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isEditableShortcutTarget(event.target)) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      const shortcutToolMap: Record<string, MarkerType> = {
+        '6': '120v',
+        '7': '208v_single_phase',
+        '8': '208v_three_phase',
+        '9': '480v_three_phase',
+        '0': 'wifi',
+      }
+
+      if (key === '1') {
+        event.preventDefault()
+        selectPointerMode()
+        return
+      }
+      if (key === '2') {
+        event.preventDefault()
+        selectPanMode()
+        return
+      }
+      if (key === '3') {
+        event.preventDefault()
+        setZoomLevel(zoom + ZOOM_STEP)
+        return
+      }
+      if (key === '4') {
+        event.preventDefault()
+        setZoomLevel(zoom - ZOOM_STEP)
+        return
+      }
+      if (key === '5') {
+        event.preventDefault()
+        fitScreen()
+        return
+      }
+      if (shortcutToolMap[key]) {
+        event.preventDefault()
+        selectTool(shortcutToolMap[key])
+        return
+      }
+      if (key === 'l') {
+        event.preventDefault()
+        selectLineTool()
+      }
+    }
+
+    window.addEventListener('keydown', handleToolbarShortcut)
+    return () => window.removeEventListener('keydown', handleToolbarShortcut)
+  }, [zoom])
 
   async function handleExportPdf() {
     if (planner.markers.length === 0) {
@@ -1819,7 +1920,6 @@ function App() {
             style={{
               width: gridMetrics.widthPx,
               height: gridMetrics.heightPx,
-              backgroundSize: `${gridMetrics.scale}px ${gridMetrics.scale}px`,
               transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
             }}
             onPointerDown={(event) => {
@@ -1848,6 +1948,7 @@ function App() {
                 style={{ opacity: planner.renderImage.opacity }}
               />
             )}
+            <GridLineLayer booth={planner.booth} />
             <div className="grid-measure grid-measure-width">{planner.booth.width} ft</div>
             <div className="grid-measure grid-measure-depth">{planner.booth.depth} ft</div>
             <UtilityLineLayer
@@ -2039,24 +2140,9 @@ function App() {
           onSelectLineTool={selectLineTool}
           onZoomIn={() => setZoomLevel(zoom + ZOOM_STEP)}
           onZoomOut={() => setZoomLevel(zoom - ZOOM_STEP)}
-          onZoomReset={() => {
-            setZoom(1)
-            setPanOffset({ x: 0, y: 0 })
-          }}
-          onTogglePan={() => {
-            setDraggingId(null)
-            setLineStartMarkerId(null)
-            setIsLineMode(false)
-            setIsPointerMode(false)
-            setIsPanMode((current) => !current)
-          }}
-          onSelectPointer={() => {
-            setDraggingId(null)
-            setIsPanMode(false)
-            setIsLineMode(false)
-            setLineStartMarkerId(null)
-            setIsPointerMode(true)
-          }}
+          onZoomReset={fitScreen}
+          onTogglePan={togglePanMode}
+          onSelectPointer={selectPointerMode}
         />
       </section>
 
@@ -2259,6 +2345,34 @@ function MeasurementGuides({
   )
 }
 
+function GridLineLayer({ booth }: { booth: BoothDetails }) {
+  const verticalLines = Array.from(
+    { length: Math.max(0, Math.ceil(booth.width) - 1) },
+    (_, index) => index + 1,
+  ).filter((x) => x < booth.width)
+  const horizontalLines = Array.from(
+    { length: Math.max(0, Math.ceil(booth.depth) - 1) },
+    (_, index) => index + 1,
+  ).filter((y) => y < booth.depth)
+
+  return (
+    <svg
+      className="grid-line-layer"
+      viewBox={`0 0 ${booth.width} ${booth.depth}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {verticalLines.map((x) => (
+        <line key={`v-${x}`} x1={x} y1={0} x2={x} y2={booth.depth} />
+      ))}
+      {horizontalLines.map((y) => (
+        <line key={`h-${y}`} x1={0} y1={y} x2={booth.width} y2={y} />
+      ))}
+    </svg>
+  )
+}
+
 function UtilityLineLayer({
   booth,
   markers,
@@ -2383,7 +2497,69 @@ function BottomToolbar({
 }) {
   return (
     <nav className="bottom-toolbar" aria-label="Utility placement tools">
+      <button
+        type="button"
+        className={`toolbar-button toolbar-button-compact ${isPointerMode ? 'is-active' : ''}`}
+        title="Pointer / Select (1)"
+        aria-label="Pointer / Select, shortcut 1"
+        onClick={onSelectPointer}
+      >
+        <span className="shortcut-badge">1</span>
+        <MousePointer2 size={17} />
+      </button>
+      <button
+        type="button"
+        className={`toolbar-button toolbar-button-compact ${isPanMode ? 'is-active' : ''}`}
+        title="Pan canvas (2)"
+        aria-label="Pan canvas, shortcut 2"
+        onClick={onTogglePan}
+      >
+        <span className="shortcut-badge">2</span>
+        <Hand size={17} />
+      </button>
+      <div className="zoom-control-group" aria-label="Zoom controls">
+        <button
+          type="button"
+          className="zoom-icon-button"
+          title="Zoom in (3)"
+          aria-label="Zoom in, shortcut 3"
+          onClick={onZoomIn}
+        >
+          <span className="shortcut-badge">3</span>
+          <ZoomIn size={17} />
+        </button>
+        <span className="zoom-level">{Math.round(Math.max(zoom, MIN_ZOOM) * 100)}%</span>
+        <button
+          type="button"
+          className="zoom-icon-button"
+          title="Zoom out (4)"
+          aria-label="Zoom out, shortcut 4"
+          onClick={onZoomOut}
+          disabled={zoom <= MIN_ZOOM}
+        >
+          <span className="shortcut-badge">4</span>
+          <ZoomOut size={17} />
+        </button>
+      </div>
+      <button
+        type="button"
+        className="toolbar-button toolbar-button-compact"
+        title="Fit screen (5)"
+        aria-label="Fit screen, shortcut 5"
+        onClick={onZoomReset}
+      >
+        <span className="shortcut-badge">5</span>
+        <Maximize2 size={16} />
+      </button>
+      <div className="toolbar-divider" aria-hidden="true" />
       {markerOptions.map((option) => {
+        const shortcutByType: Record<MarkerType, string> = {
+          '120v': '6',
+          '208v_single_phase': '7',
+          '208v_three_phase': '8',
+          '480v_three_phase': '9',
+          wifi: '0',
+        }
         const activeStyle = {
           '--active-color': markerColors[option.type],
         } as CSSProperties
@@ -2391,13 +2567,15 @@ function BottomToolbar({
           <button
             key={option.type}
             type="button"
-            className={`tool-${option.type} ${
+            className={`toolbar-button tool-${option.type} ${
               !isPanMode && !isPointerMode && !isLineMode && selectedTool === option.type ? 'is-active' : ''
             }`}
             style={activeStyle}
-            title={option.label}
+            title={`${option.label} (${shortcutByType[option.type]})`}
+            aria-label={`${option.label}, shortcut ${shortcutByType[option.type]}`}
             onClick={() => onSelectTool(option.type)}
           >
+            <span className="shortcut-badge">{shortcutByType[option.type]}</span>
             <MarkerTypeIcon type={option.type} size={17} />
             <span>{option.label}</span>
           </button>
@@ -2405,45 +2583,15 @@ function BottomToolbar({
       })}
       <button
         type="button"
-        className={`tool-line ${isLineMode ? 'is-active' : ''}`}
-        title="Line"
-        aria-label="Line"
+        className={`toolbar-button tool-line ${isLineMode ? 'is-active' : ''}`}
+        title="Line (L)"
+        aria-label="Line, shortcut L"
         onClick={onSelectLineTool}
       >
+        <span className="shortcut-badge">L</span>
         <LineToolIcon size={17} />
         <span>Line</span>
       </button>
-      <div className="toolbar-divider" aria-hidden="true" />
-      <button
-        type="button"
-        className={isPointerMode ? 'is-active' : ''}
-        title="Pointer / Select"
-        aria-label="Pointer / Select"
-        onClick={onSelectPointer}
-      >
-        <MousePointer2 size={17} />
-      </button>
-      <button
-        type="button"
-        className={isPanMode ? 'is-active' : ''}
-        title="Pan canvas"
-        aria-label="Pan canvas"
-        onClick={onTogglePan}
-      >
-        <Hand size={17} />
-      </button>
-      <div className="zoom-controls" aria-label="Zoom controls">
-        <button type="button" title="Zoom out" onClick={onZoomOut}>
-          <ZoomOut size={17} />
-        </button>
-        <span className="zoom-level">{Math.round(zoom * 100)}%</span>
-        <button type="button" title="Zoom in" onClick={onZoomIn}>
-          <ZoomIn size={17} />
-        </button>
-        <button type="button" title="Reset zoom" onClick={onZoomReset}>
-          <Maximize2 size={16} />
-        </button>
-      </div>
     </nav>
   )
 }

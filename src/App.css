@@ -48,10 +48,10 @@
 
 .booth-grid {
   position: relative;
-  max-width: 100%;
-  max-height: 100%;
   overflow: visible;
-  border: 2px solid #172033;
+  flex: 0 0 auto;
+  outline: 2px solid #172033;
+  outline-offset: 0;
   border-radius: 2px;
   background-color: rgba(255, 255, 255, 0.96);
   box-shadow:
@@ -61,16 +61,21 @@
   transform-origin: center;
 }
 
-.booth-grid::before {
-  content: "";
+.grid-line-layer {
   position: absolute;
   inset: 0;
   z-index: 2;
-  background-image:
-    linear-gradient(to right, rgba(33, 70, 112, 0.2) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(33, 70, 112, 0.2) 1px, transparent 1px);
-  background-size: inherit;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
+}
+
+.grid-line-layer line {
+  stroke: rgba(33, 70, 112, 0.2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  shape-rendering: crispEdges;
 }
 
 .render-reference {
@@ -479,35 +484,35 @@
   z-index: 12;
   display: inline-flex;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: max-content;
-  max-width: min(1120px, calc(100vw - 56px));
-  min-height: 62px;
+  max-width: min(1040px, calc(100vw - 56px));
+  min-height: 56px;
   overflow-x: auto;
   transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.92);
-  padding: 10px;
+  padding: 8px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
 
-.bottom-toolbar button,
-.zoom-controls button {
+.bottom-toolbar button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-width: 104px;
-  min-height: 40px;
+  min-width: 0;
+  min-height: 38px;
   cursor: pointer;
   border: 1px solid #d9dee7;
   border-radius: 6px;
   background: #fff;
   color: #374151;
-  padding: 8px 10px;
-  font-size: 13px;
+  padding: 8px 10px 8px 12px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   transition:
@@ -517,9 +522,18 @@
     box-shadow 160ms ease;
 }
 
-.bottom-toolbar button:hover,
-.zoom-controls button:hover {
+.bottom-toolbar button:hover {
   border-color: #9aa5b3;
+}
+
+.bottom-toolbar button:disabled {
+  cursor: not-allowed;
+  color: #9aa5b3;
+  background: #f1f5f9;
+}
+
+.bottom-toolbar button:disabled:hover {
+  border-color: #d9dee7;
 }
 
 .bottom-toolbar button.is-active {
@@ -529,9 +543,10 @@
   box-shadow: 0 10px 20px rgba(33, 70, 112, 0.18);
 }
 
-.bottom-toolbar > button[aria-label] {
-  min-width: 40px;
-  padding: 8px 10px;
+.bottom-toolbar .toolbar-button-compact {
+  min-width: 38px;
+  width: 38px;
+  padding: 8px;
 }
 
 .bottom-toolbar .tool-wifi {
@@ -542,34 +557,66 @@
 
 .toolbar-divider {
   width: 1px;
-  min-height: 40px;
+  min-height: 38px;
   background: #d9dee7;
 }
 
-.zoom-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.shortcut-badge {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
 }
 
-.zoom-controls button {
-  min-width: 40px;
-  padding: 8px 10px;
+.bottom-toolbar button.is-active .shortcut-badge {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.bottom-toolbar button:disabled .shortcut-badge {
+  color: #94a3b8;
+}
+
+.zoom-control-group {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #d9dee7;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 4px;
+}
+
+.bottom-toolbar .zoom-control-group button {
+  min-width: 34px;
+  width: 34px;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  padding: 8px;
+}
+
+.bottom-toolbar .zoom-control-group button:hover {
+  background: #f8fafc;
+}
+
+.bottom-toolbar .zoom-control-group button:disabled {
+  background: transparent;
 }
 
 .zoom-level {
   display: inline-flex;
-  min-width: 52px;
-  min-height: 40px;
+  min-width: 48px;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d9dee7;
-  border-radius: 6px;
-  background: #f8fafc;
   color: #374151;
-  padding: 8px 10px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 850;
+  line-height: 1;
 }
 
 .right-panel {
