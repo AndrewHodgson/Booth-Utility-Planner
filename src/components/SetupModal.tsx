@@ -9,6 +9,8 @@ import {
 import type { BoothDetails } from '../App'
 import { TextField } from './TextField'
 
+const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
+
 // Preset dimension options (10 ft increments from 10 to 100 ft).
 // Kept here because it is only used by the setup modal's DimensionField.
 const dimensionOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 10)
@@ -86,8 +88,7 @@ export function SetupModal({
     <div className="modal-backdrop" role="presentation">
       <section className="welcome-modal" role="dialog" aria-modal="true">
         <div className="modal-brand">
-          <span className="sourceone-mark">SourceOne</span>
-          <span>Events</span>
+          <img className="modal-logo" src={sourceOneLogoPath} alt="SourceOne Events" />
         </div>
         <div className="modal-heading">
           <p className="eyebrow">Booth Utility Planner</p>

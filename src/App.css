@@ -1078,10 +1078,14 @@ textarea {
 
 .modal-brand {
   display: flex;
-  align-items: baseline;
-  gap: 5px;
-  color: #334155;
-  font-weight: 800;
+  align-items: center;
+}
+
+.modal-logo {
+  display: block;
+  width: 190px;
+  max-width: 62%;
+  height: auto;
 }
 
 .modal-heading {
