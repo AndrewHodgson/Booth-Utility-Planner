@@ -447,7 +447,13 @@ function getMarkerShapeNumber(marker: UtilityMarker, markers: UtilityMarker[]) {
   if (!shouldNumberMarkerShape(marker.type)) {
     return undefined
   }
-  return markers.filter((candidate) => candidate.type === marker.type).findIndex((candidate) => candidate.id === marker.id) + 1
+  // Number within the same PDF/details category so the on-screen shape number
+  // matches the marker ID used on the PDF grid and in the detail tables.
+  // Electrical drops share one category; sign/custom are each their own type.
+  const sameCategory = markers.filter((candidate) =>
+    isElectrical(marker.type) ? isElectrical(candidate.type) : candidate.type === marker.type,
+  )
+  return sameCategory.findIndex((candidate) => candidate.id === marker.id) + 1
 }
 
 function isElectrical(type: MarkerType): type is ElectricalMarkerType {
@@ -1157,8 +1163,13 @@ function drawLineTable(doc: jsPDF, planner: PdfPlannerView, startY: number) {
     let connectedType = '-'
     if (line.fromMarkerId) {
       const fromMarker = markerLookup.find((m) => m.id === line.fromMarkerId)
-      connectedId = fromMarker ? `Marker ${getPdfMarkerId(markerLookup, fromMarker)}` : '-'
-      connectedType = fromMarker ? markerDisplay(fromMarker.type).label : '-'
+      if (fromMarker) {
+        // Number against the markers shown on this PDF page (e.g. the electrical
+        // list), so the table reference matches the number drawn on the grid.
+        const pageIndex = planner.markers.findIndex((m) => m.id === fromMarker.id)
+        connectedId = pageIndex >= 0 ? `Marker ${pageIndex + 1}` : markerDisplay(fromMarker.type).label
+        connectedType = markerDisplay(fromMarker.type).label
+      }
     } else if (line.fromLineId) {
       const fromLine = lineLookup.find((l) => l.id === line.fromLineId)
       const fromLineIndex = lineLookup.findIndex((l) => l.id === line.fromLineId)
@@ -1798,6 +1809,7 @@ function App() {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState('')
   const [uploadError, setUploadError] = useState('')
+  const [saveError, setSaveError] = useState('')
   const [cropRequest, setCropRequest] = useState<RenderCropRequest | null>(null)
   const [stageSize, setStageSize] = useState({ width: 900, height: 680 })
   const [zoom, setZoom] = useState(1)
@@ -1843,7 +1855,17 @@ function App() {
   }, [planner.booth.depth, planner.booth.width, stageSize.height, stageSize.width])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(planner))
+    // Autosave is an external-system sync that can fail (e.g. localStorage quota
+    // exceeded by a large booth image). We surface that failure via state so the
+    // app keeps working; saveError is not an effect dependency, so this does not
+    // re-trigger the effect or cascade.
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(planner))
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- report external save result
+      setSaveError('')
+    } catch {
+      setSaveError('Could not save changes locally. The booth image may be too large.')
+    }
   }, [planner])
 
   useEffect(() => {
@@ -2580,6 +2602,7 @@ function App() {
         selectedLine={selectedLine}
         exportStatus={exportStatus}
         uploadError={uploadError}
+        saveError={saveError}
         openSectionId={openPanelSectionId}
         onToggleSection={(sectionId) =>
           setOpenPanelSectionId((current) => (current === sectionId ? null : sectionId))
@@ -3051,6 +3074,7 @@ function RightPanel({
   selectedLine,
   exportStatus,
   uploadError,
+  saveError,
   openSectionId,
   onToggleSection,
   onBoothChange,
@@ -3070,6 +3094,7 @@ function RightPanel({
   selectedLine?: UtilityLine
   exportStatus: string
   uploadError: string
+  saveError: string
   openSectionId: string | null
   onToggleSection: (sectionId: string) => void
   onBoothChange: (booth: BoothDetails) => void
@@ -3336,10 +3361,33 @@ function RightPanel({
               value={selectedLine.label || ''}
               onChange={(value) => onLineChange(selectedLine.id, { label: value })}
             />
-            <div className="coordinate-readout">
-              Connected drop:{' '}
-              {planner.markers.find((marker) => marker.id === selectedLine.fromMarkerId)?.label || '-'}
-            </div>
+            {(() => {
+              if (selectedLine.fromMarkerId) {
+                const sourceMarker = planner.markers.find((marker) => marker.id === selectedLine.fromMarkerId)
+                if (!sourceMarker) {
+                  return <div className="coordinate-readout">Connected to: source removed</div>
+                }
+                const number = getMarkerShapeNumber(sourceMarker, planner.markers)
+                const typeLabel = markerDisplay(sourceMarker.type).label
+                return (
+                  <div className="coordinate-readout">
+                    Connected to: {number ? `Marker ${number} - ` : ''}
+                    {typeLabel}
+                  </div>
+                )
+              }
+              if (selectedLine.fromLineId) {
+                const sourceIndex = planner.lines.findIndex((line) => line.id === selectedLine.fromLineId)
+                const sourceLine = sourceIndex >= 0 ? planner.lines[sourceIndex] : undefined
+                return (
+                  <div className="coordinate-readout">
+                    Connected to:{' '}
+                    {sourceLine ? `Extension Cord ${getLineLabel(sourceLine, sourceIndex)} endpoint` : 'extension cord endpoint'}
+                  </div>
+                )
+              }
+              return <div className="coordinate-readout">Connected to: -</div>
+            })()}
             <div className="coordinate-readout">Endpoint: {lineLocation(selectedLine)}</div>
             <label className="field-group">
               <span className="field-label">Notes</span>
@@ -3424,6 +3472,7 @@ function RightPanel({
 
       <footer className="panel-footer">
         <p>Progress saves automatically in this browser.</p>
+        {saveError && <p className="upload-error" role="alert">{saveError}</p>}
         <button type="button" className="reset-button" onClick={onReset}>
           <RotateCcw size={14} />
           Reset planner
