@@ -4,17 +4,13 @@ import Cropper from 'react-easy-crop'
 import type { Area } from 'react-easy-crop'
 import {
   Download,
-  Hand,
-  Maximize2,
-  MousePointer2,
   RotateCcw,
   RotateCw,
   Trash2,
   Upload,
-  Wifi,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react'
+import { MarkerTypeIcon } from './components/MarkerTypeIcon'
+import { BottomToolbar } from './components/BottomToolbar'
 import {
   createCroppedImageDataUrl,
 } from './utils/cropImage'
@@ -140,100 +136,6 @@ const ampOptionsByType: Record<ElectricalMarkerType, AmpValue[]> = {
 }
 
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
-
-function NumberedShapeIcon({
-  shape,
-  number,
-  size,
-}: {
-  shape: 'triangle' | 'circle' | 'square' | 'diamond' | 'pentagon' | 'hexagon'
-  number?: number
-  size: number
-}) {
-  const strokeProps = {
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    strokeWidth: '2' as const,
-  }
-  // Triangle centroid sits at y≈14.3 in a 24×24 viewBox (apex y=3, base y=20)
-  const textY = shape === 'triangle' ? 14 : 12.5
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-      className="nested-shape-icon"
-    >
-      {shape === 'triangle' && <path {...strokeProps} d="M12 3 21 20H3L12 3Z" />}
-      {shape === 'circle' && <circle {...strokeProps} cx="12" cy="12" r="8.5" />}
-      {shape === 'square' && <rect {...strokeProps} x="4" y="4" width="16" height="16" rx="1.5" />}
-      {shape === 'diamond' && <path {...strokeProps} d="M12 2 22 12 12 22 2 12Z" />}
-      {shape === 'pentagon' && <path {...strokeProps} d="M12 3 21 10 17.5 21H6.5L3 10 12 3Z" />}
-      {shape === 'hexagon' && <path {...strokeProps} d="M7 4H17L22 12 17 20H7L2 12 7 4Z" />}
-      {number !== undefined && (
-        <text
-          x="12"
-          y={textY}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="currentColor"
-          stroke="none"
-          fontSize={9}
-          fontWeight="900"
-          fontFamily="system-ui, sans-serif"
-        >
-          {number}
-        </text>
-      )}
-    </svg>
-  )
-}
-
-function MarkerTypeIcon({ type, size = 15, number }: { type: MarkerType; size?: number; number?: number }) {
-  switch (type) {
-    case '120v':
-      return <NumberedShapeIcon shape="triangle" number={number} size={size} />
-    case '208v_single_phase':
-      return <NumberedShapeIcon shape="square" number={number} size={size} />
-    case '208v_three_phase':
-      return <NumberedShapeIcon shape="diamond" number={number} size={size} />
-    case '480v_three_phase':
-      return <NumberedShapeIcon shape="pentagon" number={number} size={size} />
-    case 'wifi':
-      return <Wifi size={size} />
-    case 'hanging_sign':
-      return <NumberedShapeIcon shape="circle" number={number} size={size} />
-    case 'custom_drop':
-      return <NumberedShapeIcon shape="hexagon" number={number} size={size} />
-  }
-}
-
-function LineToolIcon({ size = 17 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M5 17 19 7"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2"
-      />
-      <circle cx="5" cy="17" r="2.5" fill="currentColor" />
-      <circle cx="19" cy="7" r="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  )
-}
 
 const defaultBooth: BoothDetails = {
   name: '',
@@ -392,25 +294,6 @@ function getValidAmp(type: MarkerType, amps: unknown): AmpValue | undefined {
     return undefined
   }
   return options.includes(amps as AmpValue) ? (amps as AmpValue) : options[0]
-}
-
-function getToolbarLabelLines(type: MarkerType) {
-  switch (type) {
-    case '120v':
-      return ['120 V', '1 Phase']
-    case '208v_single_phase':
-      return ['208 V', '1 Phase']
-    case '208v_three_phase':
-      return ['208 V', '3 Phase']
-    case '480v_three_phase':
-      return ['480 V', '3 Phase']
-    case 'hanging_sign':
-      return ['Hanging', 'Sign']
-    case 'custom_drop':
-      return ['Custom', 'Marker']
-    case 'wifi':
-      return ['WiFi']
-  }
 }
 
 function getGridMarkerDisplayLabel(type: MarkerType) {
@@ -1931,155 +1814,6 @@ function AmpPrompt({
         </select>
       </label>
     </div>
-  )
-}
-
-function BottomToolbar({
-  selectedTool,
-  zoom,
-  isPanMode,
-  isPointerMode,
-  isLineMode,
-  onSelectTool,
-  onSelectLineTool,
-  onZoomIn,
-  onZoomOut,
-  onZoomReset,
-  onTogglePan,
-  onSelectPointer,
-}: {
-  selectedTool: MarkerType
-  zoom: number
-  isPanMode: boolean
-  isPointerMode: boolean
-  isLineMode: boolean
-  onSelectTool: (tool: MarkerType) => void
-  onSelectLineTool: () => void
-  onZoomIn: () => void
-  onZoomOut: () => void
-  onZoomReset: () => void
-  onTogglePan: () => void
-  onSelectPointer: () => void
-}) {
-  const markerToolsBeforeLine = markerOptions.filter((option) =>
-    option.type !== 'wifi' && option.type !== 'hanging_sign' && option.type !== 'custom_drop'
-  )
-  const markerToolsAfterLine = markerOptions.filter((option) =>
-    option.type === 'wifi' || option.type === 'hanging_sign' || option.type === 'custom_drop'
-  )
-  const renderMarkerTool = (option: (typeof markerOptions)[number]) => {
-    const activeStyle = {
-      '--active-color': markerColors[option.type],
-    } as CSSProperties
-    return (
-      <button
-        key={option.type}
-        type="button"
-        className={`toolbar-button toolbar-tool-button tool-${option.type} ${
-          !isPanMode && !isPointerMode && !isLineMode && selectedTool === option.type ? 'is-active' : ''
-        }`}
-        style={activeStyle}
-        title={option.label}
-        aria-label={option.label}
-        onClick={() => onSelectTool(option.type)}
-      >
-        <MarkerTypeIcon type={option.type} size={17} />
-        <span className="toolbar-label-stack">
-          {getToolbarLabelLines(option.type).map((labelLine) => (
-            <span key={labelLine}>{labelLine}</span>
-          ))}
-        </span>
-      </button>
-    )
-  }
-
-  return (
-    <nav className="bottom-toolbar" aria-label="Utility placement tools">
-      <div className="toolbar-group">
-        <span className="toolbar-group-label">Canvas Tools</span>
-        <div className="toolbar-group-controls">
-          <button
-            type="button"
-            className={`toolbar-button toolbar-button-compact ${isPointerMode ? 'is-active' : ''}`}
-            title="Pointer / Select (1)"
-            aria-label="Pointer / Select, shortcut 1"
-            onClick={onSelectPointer}
-          >
-            <span className="shortcut-badge">1</span>
-            <MousePointer2 size={17} />
-          </button>
-          <button
-            type="button"
-            className={`toolbar-button toolbar-button-compact ${isPanMode ? 'is-active' : ''}`}
-            title="Pan canvas (2)"
-            aria-label="Pan canvas, shortcut 2"
-            onClick={onTogglePan}
-          >
-            <span className="shortcut-badge">2</span>
-            <Hand size={17} />
-          </button>
-          <div className="zoom-control-group" aria-label="Zoom controls">
-            <button
-              type="button"
-              className="zoom-icon-button"
-              title="Zoom in (3)"
-              aria-label="Zoom in, shortcut 3"
-              onClick={onZoomIn}
-            >
-              <span className="shortcut-badge">3</span>
-              <ZoomIn size={17} />
-            </button>
-            <span className="zoom-level">{Math.round(Math.max(zoom, MIN_ZOOM) * 100)}%</span>
-            <button
-              type="button"
-              className="zoom-icon-button"
-              title="Zoom out (4)"
-              aria-label="Zoom out, shortcut 4"
-              onClick={onZoomOut}
-              disabled={zoom <= MIN_ZOOM}
-            >
-              <span className="shortcut-badge">4</span>
-              <ZoomOut size={17} />
-            </button>
-          </div>
-          <button
-            type="button"
-            className="toolbar-button toolbar-button-compact"
-            title="Fit screen (5)"
-            aria-label="Fit screen, shortcut 5"
-            onClick={onZoomReset}
-          >
-            <span className="shortcut-badge">5</span>
-            <Maximize2 size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="toolbar-group toolbar-group-separated">
-        <span className="toolbar-group-label">Power &amp; Cords</span>
-        <div className="toolbar-group-controls">
-          {markerToolsBeforeLine.map(renderMarkerTool)}
-          <button
-            type="button"
-            className={`toolbar-button toolbar-tool-button tool-line ${isLineMode ? 'is-active' : ''}`}
-            title="Extension Cord"
-            aria-label="Extension Cord"
-            onClick={onSelectLineTool}
-          >
-            <LineToolIcon size={17} />
-            <span className="toolbar-label-stack">
-              <span>Extension</span>
-              <span>Cord</span>
-            </span>
-          </button>
-        </div>
-      </div>
-      <div className="toolbar-group toolbar-group-separated">
-        <span className="toolbar-group-label">Additional Utilities</span>
-        <div className="toolbar-group-controls">
-          {markerToolsAfterLine.map(renderMarkerTool)}
-        </div>
-      </div>
-    </nav>
   )
 }
 
