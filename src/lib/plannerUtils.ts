@@ -92,6 +92,22 @@ export function markerDisplay(type: MarkerType) {
 // Line / extension cord helpers
 // ---------------------------------------------------------------------------
 
+// Returns which booth edge is nearest to (x, y) and the distance to it.
+// Used by both the canvas measurement guides and the PDF grid dashed lines so
+// they always report the same nearest edges and distances.
+export function getEdgeDistances(x: number, y: number, booth: { width: number; depth: number }) {
+  const rightDistance = booth.width - x
+  const backDistance = booth.depth - y
+  const horizontalSide: 'left' | 'right' = x <= rightDistance ? 'left' : 'right'
+  const verticalSide: 'front' | 'back' = y <= backDistance ? 'front' : 'back'
+  return {
+    horizontalSide,
+    verticalSide,
+    horizontalDistance: horizontalSide === 'left' ? x : rightDistance,
+    verticalDistance: verticalSide === 'front' ? y : backDistance,
+  }
+}
+
 export function getLineLabel(line: UtilityLine, index: number) {
   return line.label?.trim() || `L${index + 1}`
 }

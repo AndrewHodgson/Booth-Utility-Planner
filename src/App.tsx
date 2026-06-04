@@ -34,6 +34,7 @@ import {
   getLineLabel,
   lineLocation,
   getLineStartCoords,
+  getEdgeDistances,
   getMarkerShapeNumber,
   collectLineSubtree,
   migrateMarkerType,
@@ -428,21 +429,6 @@ function getGridMarkerDisplayLabel(type: MarkerType) {
       return 'Hanging'
     case 'custom_drop':
       return 'Custom'
-  }
-}
-
-// Shared edge logic used by the grid measurement guides and the selected-drop
-// details panel so they always report the same nearest edges/distances.
-function getEdgeDistances(x: number, y: number, booth: BoothDetails) {
-  const rightDistance = booth.width - x
-  const backDistance = booth.depth - y
-  const horizontalSide: 'left' | 'right' = x <= rightDistance ? 'left' : 'right'
-  const verticalSide: 'front' | 'back' = y <= backDistance ? 'front' : 'back'
-  return {
-    horizontalSide,
-    verticalSide,
-    horizontalDistance: horizontalSide === 'left' ? x : rightDistance,
-    verticalDistance: verticalSide === 'front' ? y : backDistance,
   }
 }
 

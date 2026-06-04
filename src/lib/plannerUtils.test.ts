@@ -3,6 +3,7 @@ import {
   type MarkerType,
   collectLineSubtree,
   getActivePdfCategoryTitles,
+  getEdgeDistances,
   getMarkerShapeNumber,
   migrateMarkerType,
 } from './plannerUtils'
@@ -239,5 +240,59 @@ describe('migrateMarkerType', () => {
     expect(migrateMarkerType('')).toBeNull()
     expect(migrateMarkerType('main_drop_old')).toBeNull()
     expect(migrateMarkerType('WIFI')).toBeNull() // case-sensitive
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Edge distances
+// ---------------------------------------------------------------------------
+
+describe('getEdgeDistances', () => {
+  const booth = { width: 20, depth: 10 }
+
+  it('reports left and front when marker is closer to those edges', () => {
+    const result = getEdgeDistances(3, 2, booth)
+    expect(result.horizontalSide).toBe('left')
+    expect(result.horizontalDistance).toBe(3)
+    expect(result.verticalSide).toBe('front')
+    expect(result.verticalDistance).toBe(2)
+  })
+
+  it('reports right and back when marker is closer to those edges', () => {
+    const result = getEdgeDistances(16, 8, booth)
+    expect(result.horizontalSide).toBe('right')
+    expect(result.horizontalDistance).toBe(4)   // 20 - 16
+    expect(result.verticalSide).toBe('back')
+    expect(result.verticalDistance).toBe(2)      // 10 - 8
+  })
+
+  it('prefers left when equidistant horizontally', () => {
+    // x == width - x  →  x = 10  →  left wins (x <= rightDistance)
+    const result = getEdgeDistances(10, 3, booth)
+    expect(result.horizontalSide).toBe('left')
+    expect(result.horizontalDistance).toBe(10)
+  })
+
+  it('prefers front when equidistant vertically', () => {
+    // y == depth - y  →  y = 5  →  front wins (y <= backDistance)
+    const result = getEdgeDistances(3, 5, booth)
+    expect(result.verticalSide).toBe('front')
+    expect(result.verticalDistance).toBe(5)
+  })
+
+  it('handles a marker at the origin (0, 0) — left and front with zero distance', () => {
+    const result = getEdgeDistances(0, 0, booth)
+    expect(result.horizontalSide).toBe('left')
+    expect(result.horizontalDistance).toBe(0)
+    expect(result.verticalSide).toBe('front')
+    expect(result.verticalDistance).toBe(0)
+  })
+
+  it('handles a marker at the far corner (width, depth) — right and back', () => {
+    const result = getEdgeDistances(20, 10, booth)
+    expect(result.horizontalSide).toBe('right')
+    expect(result.horizontalDistance).toBe(0)
+    expect(result.verticalSide).toBe('back')
+    expect(result.verticalDistance).toBe(0)
   })
 })

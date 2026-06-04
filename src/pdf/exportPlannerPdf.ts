@@ -14,6 +14,7 @@ import {
   lineLocation,
   getLineStartCoords,
   lineLengthFt,
+  getEdgeDistances,
 } from '../lib/plannerUtils'
 import type { BoothDetails, PlannerState } from '../App'
 
@@ -420,16 +421,12 @@ async function drawPdfGrid(doc: jsPDF, planner: PdfPlannerView, grid: PdfGridLay
       x: grid.x + (marker.x / booth.width) * grid.width,
       y: grid.y + ((booth.depth - marker.y) / booth.depth) * grid.height,
     }
-    const leftDistance = marker.x
-    const rightDistance = booth.width - marker.x
-    const frontDistance = marker.y
-    const backDistance = booth.depth - marker.y
-    const horizontalEdgeX =
-      leftDistance <= rightDistance ? grid.x : grid.x + grid.width
-    const verticalEdgeY =
-      frontDistance <= backDistance ? grid.y + grid.height : grid.y
-    const horizontalDistance = Math.min(leftDistance, rightDistance)
-    const verticalDistance = Math.min(frontDistance, backDistance)
+    const { horizontalSide, verticalSide, horizontalDistance, verticalDistance } =
+      getEdgeDistances(marker.x, marker.y, booth)
+    // Convert nearest-side names to PDF pixel coordinates.
+    // The booth y-axis is flipped in PDF space: front (y=0) maps to the grid bottom.
+    const horizontalEdgeX = horizontalSide === 'left' ? grid.x : grid.x + grid.width
+    const verticalEdgeY = verticalSide === 'front' ? grid.y + grid.height : grid.y
     const [r, g, b] = hexToRgb(markerColors[marker.type])
 
     doc.setDrawColor(r, g, b)
