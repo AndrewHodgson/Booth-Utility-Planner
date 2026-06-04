@@ -35,6 +35,7 @@ Setup and Booth Details collect:
 - Booth Width
 - Booth Depth
 - Booth Type
+- Flooring
 
 Booth dimensions support preset 10 ft increments from 10 ft to 100 ft plus custom values. Width and depth are clamped between 1 ft and 100 ft. Default booth size is 20 ft x 20 ft.
 
@@ -45,6 +46,15 @@ Booth types:
 - Peninsula
 - End Cap
 - Island
+
+Flooring options:
+
+- Choose Flooring (default; also used for planners saved before the field existed)
+- Flooring Ordered
+- No Flooring Ordered
+- Unknown / Not Provided
+
+Planners saved with the earlier option names are mapped on load: `Carpeted` → `Flooring Ordered`, `Not Carpeted` → `No Flooring Ordered`, `Unknown / Not Provided` is unchanged.
 
 ## Grid Rules
 
@@ -315,7 +325,7 @@ Common page content:
 - SourceOne logo
 - Title
 - Show info line
-- Booth info line
+- Booth info line (booth #, booth size, booth type, and flooring)
 - Full booth footprint regardless of current zoom/pan
 - Optional booth image behind the grid
 - Neutral black/gray grid lines over the image
@@ -416,6 +426,7 @@ type BoothDetails = {
   width: number
   depth: number
   boothType: 'Inline' | 'Corner' | 'Peninsula' | 'End Cap' | 'Island'
+  flooring: 'Choose Flooring' | 'Flooring Ordered' | 'No Flooring Ordered' | 'Unknown / Not Provided'
   sideLabels: {
     front: string
     back: string

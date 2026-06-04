@@ -61,6 +61,27 @@ type UtilityLine = {
 const BOOTH_TYPES = ['Inline', 'Corner', 'Peninsula', 'End Cap', 'Island'] as const
 type BoothType = (typeof BOOTH_TYPES)[number]
 
+const FLOORING_OPTIONS = ['Choose Flooring', 'Flooring Ordered', 'No Flooring Ordered', 'Unknown / Not Provided'] as const
+type FlooringValue = (typeof FLOORING_OPTIONS)[number]
+const DEFAULT_FLOORING: FlooringValue = 'Choose Flooring'
+
+// Map flooring values saved before the option list was renamed onto the current options.
+const LEGACY_FLOORING_MAP: Record<string, FlooringValue> = {
+  Carpeted: 'Flooring Ordered',
+  'Not Carpeted': 'No Flooring Ordered',
+  'Unknown / Not Provided': 'Unknown / Not Provided',
+}
+
+function sanitizeFlooring(value: unknown): FlooringValue {
+  if (FLOORING_OPTIONS.includes(value as FlooringValue)) {
+    return value as FlooringValue
+  }
+  if (typeof value === 'string' && LEGACY_FLOORING_MAP[value]) {
+    return LEGACY_FLOORING_MAP[value]
+  }
+  return DEFAULT_FLOORING
+}
+
 type BoothDetails = {
   name: string
   companyName: string
@@ -73,6 +94,7 @@ type BoothDetails = {
   width: number
   depth: number
   boothType: BoothType
+  flooring: FlooringValue
   sideLabels: {
     front: string
     back: string
@@ -282,6 +304,7 @@ const defaultBooth: BoothDetails = {
   width: 20,
   depth: 20,
   boothType: 'Inline',
+  flooring: DEFAULT_FLOORING,
   sideLabels: {
     front: '',
     back: '',
@@ -1231,7 +1254,7 @@ function drawPdfPageHeader(
     96,
   )
   doc.text(
-    `Booth #: ${planner.booth.boothNumber || '-'} | Booth Size: ${planner.booth.width}ft x ${planner.booth.depth}ft | Booth Type: ${planner.booth.boothType || '-'}`,
+    `Booth #: ${planner.booth.boothNumber || '-'} | Booth Size: ${planner.booth.width}ft x ${planner.booth.depth}ft | Booth Type: ${planner.booth.boothType || '-'} | Flooring: ${planner.booth.flooring || DEFAULT_FLOORING}`,
     PDF_MARGIN,
     109,
   )
@@ -1449,6 +1472,7 @@ function readInitialState(): PlannerState {
         boothType: BOOTH_TYPES.includes(parsed.booth?.boothType as BoothType)
           ? (parsed.booth?.boothType as BoothType)
           : 'Inline',
+        flooring: sanitizeFlooring(parsed.booth?.flooring),
       },
       markers,
       lines,
@@ -1559,6 +1583,15 @@ function SetupModal({
               onChange={(event) => updateField('boothType', event.target.value as BoothType)}
             >
               {BOOTH_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="field-group">
+            <span className="field-label">Flooring</span>
+            <select
+              value={booth.flooring}
+              onChange={(event) => updateField('flooring', event.target.value as FlooringValue)}
+            >
+              {FLOORING_OPTIONS.map((option) => <option key={option}>{option}</option>)}
             </select>
           </label>
         </div>
@@ -3151,6 +3184,15 @@ function RightPanel({
               onChange={(event) => setBoothField('boothType', event.target.value as BoothType)}
             >
               {BOOTH_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="field-group">
+            <span className="field-label">Flooring</span>
+            <select
+              value={booth.flooring}
+              onChange={(event) => setBoothField('flooring', event.target.value as FlooringValue)}
+            >
+              {FLOORING_OPTIONS.map((option) => <option key={option}>{option}</option>)}
             </select>
           </label>
         </div>
