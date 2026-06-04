@@ -606,6 +606,24 @@ function lineLengthFt(
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+// Given a set of extension cords being removed, expand it to include every cord
+// that descends from them (cords whose fromLineId chains back to a removed cord),
+// so deleting a source removes the whole branch instead of leaving orphan endpoints.
+function collectLineSubtree(lines: UtilityLine[], rootLineIds: Iterable<string>): Set<string> {
+  const removed = new Set<string>(rootLineIds)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const line of lines) {
+      if (!removed.has(line.id) && line.fromLineId && removed.has(line.fromLineId)) {
+        removed.add(line.id)
+        changed = true
+      }
+    }
+  }
+  return removed
+}
+
 function getPdfMarkerId(markers: UtilityMarker[], marker: UtilityMarker) {
   return String(markers.findIndex((candidate) => candidate.id === marker.id) + 1)
 }
@@ -1994,33 +2012,35 @@ function App() {
   }
 
   const deleteMarker = useCallback((id: string) => {
+    // Compute the removed cord subtree from the rendered state so selection
+    // cleanup matches what setPlanner removes below.
+    const directLineIds = planner.lines.filter((l) => l.fromMarkerId === id).map((l) => l.id)
+    const removedLineIds = collectLineSubtree(planner.lines, directLineIds)
     setPlanner((current) => {
-      const directlyRemovedIds = new Set(
-        current.lines.filter((l) => l.fromMarkerId === id).map((l) => l.id),
-      )
-      const filteredLines = current.lines.filter(
-        (l) => l.fromMarkerId !== id && (!l.fromLineId || !directlyRemovedIds.has(l.fromLineId)),
-      )
+      const currentDirect = current.lines.filter((l) => l.fromMarkerId === id).map((l) => l.id)
+      const currentRemoved = collectLineSubtree(current.lines, currentDirect)
       return {
         ...current,
         markers: current.markers.filter((marker) => marker.id !== id),
-        lines: filteredLines,
+        lines: current.lines.filter((line) => !currentRemoved.has(line.id)),
       }
     })
-    setSelectedMarkerId(null)
-    setSelectedLineId((current) =>
-      planner.lines.some((line) => line.id === current && line.fromMarkerId === id) ? null : current,
-    )
-    setAmpPromptMarkerId(null)
+    setSelectedMarkerId((current) => (current === id ? null : current))
+    setSelectedLineId((current) => (current && removedLineIds.has(current) ? null : current))
+    setAmpPromptMarkerId((current) => (current === id ? null : current))
   }, [planner.lines])
 
   const deleteLine = useCallback((id: string) => {
-    setPlanner((current) => ({
-      ...current,
-      lines: current.lines.filter((line) => line.id !== id && line.fromLineId !== id),
-    }))
-    setSelectedLineId(null)
-  }, [])
+    const removedLineIds = collectLineSubtree(planner.lines, [id])
+    setPlanner((current) => {
+      const currentRemoved = collectLineSubtree(current.lines, [id])
+      return {
+        ...current,
+        lines: current.lines.filter((line) => !currentRemoved.has(line.id)),
+      }
+    })
+    setSelectedLineId((current) => (current && removedLineIds.has(current) ? null : current))
+  }, [planner.lines])
 
   function placeMarker(clientX: number, clientY: number) {
     if (isPanMode || isPointerMode || isLineMode) {
@@ -3110,6 +3130,15 @@ function RightPanel({
   onReset: () => void
 }) {
   const booth = planner.booth
+  // The booth image is baked to the booth ratio at upload time. If width/depth
+  // change afterward, the stored image no longer matches and gets stretched, so
+  // warn the user to re-upload or re-crop. Uses the same tolerance as upload.
+  const renderImage = planner.renderImage
+  const renderRatioMismatch = renderImage
+    ? Math.abs(renderImage.width / renderImage.height - booth.width / booth.depth) /
+        (booth.width / booth.depth) >
+      ASPECT_RATIO_TOLERANCE
+    : false
 
   function setBoothField(field: keyof BoothDetails, value: string | number) {
     onBoothChange({ ...booth, [field]: value })
@@ -3266,11 +3295,13 @@ function RightPanel({
                     onToolChange(type)
                   }}
                 >
-                  {markerOptions.map((option) => (
-                    <option key={option.type} value={option.type}>
-                      {option.label}
-                    </option>
-                  ))}
+                  {markerOptions
+                    .filter((option) => option.type !== 'hanging_sign' && option.type !== 'custom_drop')
+                    .map((option) => (
+                      <option key={option.type} value={option.type}>
+                        {option.label}
+                      </option>
+                    ))}
                 </select>
               </label>
             )}
@@ -3430,6 +3461,11 @@ function RightPanel({
           />
         </label>
         {uploadError && <p className="upload-error">{uploadError}</p>}
+        {renderRatioMismatch && (
+          <p className="upload-error" role="alert">
+            Booth dimensions changed. Re-upload or re-crop the booth image for the correct ratio.
+          </p>
+        )}
         {planner.renderImage ? (
           <div className="upload-status">
             <p>{planner.renderImage.fileName}</p>
