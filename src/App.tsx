@@ -21,18 +21,16 @@ import {
   createFadedImageDataUrl,
 } from './utils/cropImage'
 import './App.css'
-
-type MarkerType =
-  | '120v'
-  | '208v_single_phase'
-  | '208v_three_phase'
-  | '480v_three_phase'
-  | 'wifi'
-  | 'hanging_sign'
-  | 'custom_drop'
+import {
+  type MarkerType,
+  type ElectricalMarkerType,
+  isElectrical,
+  getMarkerShapeNumber,
+  collectLineSubtree,
+  migrateMarkerType,
+} from './lib/plannerUtils'
 
 type AmpValue = '10A' | '20A' | '30A' | '60A' | '100A' | '200A' | '400A' | ''
-type ElectricalMarkerType = Exclude<MarkerType, 'wifi' | 'hanging_sign' | 'custom_drop'>
 
 type UtilityMarker = {
   id: string
@@ -439,30 +437,6 @@ function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
   return `E${count}`
 }
 
-function shouldNumberMarkerShape(type: MarkerType) {
-  return isElectrical(type) || type === 'hanging_sign' || type === 'custom_drop'
-}
-
-function getMarkerShapeNumber(marker: UtilityMarker, markers: UtilityMarker[]) {
-  if (!shouldNumberMarkerShape(marker.type)) {
-    return undefined
-  }
-  // Number within the same PDF/details category so the on-screen shape number
-  // matches the marker ID used on the PDF grid and in the detail tables.
-  // Electrical drops share one category; sign/custom are each their own type.
-  const sameCategory = markers.filter((candidate) =>
-    isElectrical(marker.type) ? isElectrical(candidate.type) : candidate.type === marker.type,
-  )
-  return sameCategory.findIndex((candidate) => candidate.id === marker.id) + 1
-}
-
-function isElectrical(type: MarkerType): type is ElectricalMarkerType {
-  return type === '120v' ||
-    type === '208v_single_phase' ||
-    type === '208v_three_phase' ||
-    type === '480v_three_phase'
-}
-
 function getAmpOptions(type: MarkerType) {
   return isElectrical(type) ? ampOptionsByType[type] : []
 }
@@ -604,24 +578,6 @@ function lineLengthFt(
   const dx = line.toX - start.x
   const dy = line.toY - start.y
   return Math.sqrt(dx * dx + dy * dy)
-}
-
-// Given a set of extension cords being removed, expand it to include every cord
-// that descends from them (cords whose fromLineId chains back to a removed cord),
-// so deleting a source removes the whole branch instead of leaving orphan endpoints.
-function collectLineSubtree(lines: UtilityLine[], rootLineIds: Iterable<string>): Set<string> {
-  const removed = new Set<string>(rootLineIds)
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const line of lines) {
-      if (!removed.has(line.id) && line.fromLineId && removed.has(line.fromLineId)) {
-        removed.add(line.id)
-        changed = true
-      }
-    }
-  }
-  return removed
 }
 
 function getPdfMarkerId(markers: UtilityMarker[], marker: UtilityMarker) {
@@ -1443,13 +1399,8 @@ function readInitialState(): PlannerState {
     const markers = Array.isArray(parsed.markers)
       ? parsed.markers
           .map((marker) => {
-            const legacyType = marker.type as string
-            const migratedType: MarkerType = legacyType === 'main_drop'
-              ? '120v'
-              : legacyType === 'custom_marker'
-                ? 'custom_drop'
-                : (legacyType as MarkerType)
-            if (!markerOptions.some((option) => option.type === migratedType)) {
+            const migratedType = migrateMarkerType(marker.type as string)
+            if (!migratedType) {
               return null
             }
             return {
