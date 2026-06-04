@@ -169,6 +169,7 @@
 }
 
 .side-label-input {
+  min-width: 0;
   min-height: 0;
   border: 1px solid var(--sourceone-blue);
   border-radius: 4px;
@@ -190,6 +191,16 @@
   bottom: -100px;
   left: 50%;
   transform: translateX(-50%);
+}
+
+/* Left/Right are anchored by their edge (left/right) and rotated about their center,
+   so their distance from the grid depends on the box width. Lock the width so the
+   anchor never moves when the editable input replaces the static value, or when the
+   custom text is long. Front/Back are centered (translateX(-50%)) and width-independent,
+   so they intentionally keep their auto width and are not affected. */
+.side-label-left,
+.side-label-right {
+  width: 120px;
 }
 
 .side-label-left {

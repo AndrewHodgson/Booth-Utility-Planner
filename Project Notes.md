@@ -2,40 +2,41 @@
 
 ## Purpose
 
-Booth Utility Planner is a lightweight 2D utility layout tool for SourceOne Events. It helps exhibitors and SourceOne project managers communicate where electrical drops, WiFi drops, and utility runs should be placed inside a booth.
+Booth Utility Planner is a lightweight 2D utility layout tool for SourceOne Events. It helps exhibitors and SourceOne project managers communicate where power drops, WiFi, hanging signs, custom markers, and extension cords should be placed inside an event booth.
 
-The app is a layout generator. It is not an ordering, pricing, payment, or approval system. The main deliverable is a SourceOne-branded PDF that can be downloaded and shared.
+The app produces a SourceOne-branded PDF. It is not an ordering, pricing, payment, approval, account, or submission system.
 
 ## Current Workflow
 
 1. User opens the app.
 2. Setup modal collects contact, show, and booth details.
-3. App creates a 1 ft booth grid based on width and depth.
-4. User edits side labels for Front, Back, Left, and Right.
-5. User places electrical and WiFi drops from the bottom toolbar.
-6. User edits selected drop details in the right panel.
-7. User draws utility runs with the Line tool.
-8. User optionally uploads, crops, rotates, and fades a booth image behind the grid.
-9. User exports a SourceOne-branded PDF.
-10. Browser localStorage preserves progress after refresh.
+3. App creates a scaled 1 ft grid from booth width and depth.
+4. User edits Front, Back, Left, and Right side labels from Booth Position or directly on the grid.
+5. User chooses a tool from the grouped bottom toolbar.
+6. User places power drops, WiFi, Hanging Sign, or Custom Marker items on the grid.
+7. User edits selected item details in the right panel.
+8. User draws Extension Cords from a drop or another extension cord endpoint.
+9. User optionally uploads, crops, rotates, and fades a top-down booth image behind the grid.
+10. User exports a category-based SourceOne PDF.
+11. Browser localStorage preserves progress after refresh.
 
-## Setup Details
+## Setup And Booth Details
 
-The setup modal collects:
+Setup and Booth Details collect:
 
 - Name
-- Company Name
+- Company
 - Email
-- Phone Number
-- Booth Number
-- Show Name
-- Show Date
-- Show Location
+- Phone
+- Booth #
+- Show
+- Date
+- Location
 - Booth Width
 - Booth Depth
 - Booth Type
 
-Booth dimensions support preset 10 ft increments from 10 ft to 100 ft plus custom values. Internally, width and depth are clamped between 1 ft and 100 ft. Default booth size is 20 ft x 20 ft.
+Booth dimensions support preset 10 ft increments from 10 ft to 100 ft plus custom values. Width and depth are clamped between 1 ft and 100 ft. Default booth size is 20 ft x 20 ft.
 
 Booth types:
 
@@ -48,13 +49,13 @@ Booth types:
 ## Grid Rules
 
 - Grid unit: 1 ft squares
-- Placement snapping: 0.5 ft
+- Placement and endpoint snapping: 0.5 ft
 - Coordinates: x from left edge, y from front edge
 - Front of booth is the visual bottom side of the grid
-- Canvas supports zoom and pan
-- The Fit button resets zoom to 1 and pan to origin
-- Side labels sit around the four grid sides
-- Optional booth image renders under the grid and all markers/lines/guides
+- Canvas supports pointer mode, pan mode, zoom in, zoom out, and fit screen
+- Minimum zoom is 100%
+- Large booths can render larger than the visible viewport; users pan instead of shrinking all tiles too small
+- Optional booth image renders behind grid, markers, extension cords, labels, and measurement guides
 
 ## Editable Side Labels
 
@@ -65,21 +66,60 @@ Side labels exist for:
 - Left
 - Right
 
-They can be edited from the Booth Position panel and directly on the grid via double-click. Custom text persists in `booth.sideLabels`.
+They can be edited from the Booth Position panel and by double-clicking labels around the grid. Custom text persists in `booth.sideLabels`.
 
-PDF export draws side labels from the same state. PDF side labels are measured and anchored from stable centers so custom text should not shift the visual gap from the grid.
+PDF export draws side labels from the same state. Front/Back use centered horizontal anchors. Left/Right are rotated and their anchor is computed manually from `getTextWidth` (not jsPDF's `align: "center"`, which is unreliable with rotation) so custom text length never moves the visual gap from the grid.
 
-## Drop Types
+## Bottom Toolbar
 
-| Type | Internal value | Shape/icon | Color |
-|---|---|---|---|
-| 120 V | `120v` | Triangle | Blue |
-| 208 V Single Phase | `208v_single_phase` | Circle | Purple |
-| 208 V Three Phase | `208v_three_phase` | Square | Orange |
-| 480 V Three Phase | `480v_three_phase` | Diamond | Red |
-| WiFi | `wifi` | WiFi icon | Green |
+The bottom toolbar is visually grouped.
 
-Placed electrical markers show type and amp information on the web grid. WiFi markers show speed when set. PDF marker circles use a simplified numeric ID.
+| Group | Tools |
+|---|---|
+| Canvas Tools | Pointer, Pan, Zoom controls, Fit Screen |
+| Power & Cords | 120 Volt Single Phase, 208 Volt Single Phase, 208 Volt Three Phase, 480 Volt Three Phase, Extension Cord |
+| Additional Utilities | WiFi, Hanging Sign, Custom Marker |
+
+Canvas tools keep visible keyboard shortcut labels. Utility tools do not show shortcut labels and do not have utility keyboard shortcut behavior.
+
+Toolbar display labels:
+
+| Tool | Toolbar label |
+|---|---|
+| 120 Volt Single Phase | `120 V` / `1 Phase` |
+| 208 Volt Single Phase | `208 V` / `1 Phase` |
+| 208 Volt Three Phase | `208 V` / `3 Phase` |
+| 480 Volt Three Phase | `480 V` / `3 Phase` |
+| Extension Cord | `Extension` / `Cord` |
+| WiFi | `WiFi` |
+| Hanging Sign | `Hanging` / `Sign` |
+| Custom Marker | `Custom` / `Marker` |
+
+## Marker Types
+
+| Tool | Internal value | Web toolbar shape/icon | PDF shape | Color |
+|---|---|---|---|---|
+| 120 Volt Single Phase | `120v` | Triangle | Triangle | Blue |
+| 208 Volt Single Phase | `208v_single_phase` | Square | Square | Purple |
+| 208 Volt Three Phase | `208v_three_phase` | Diamond | Diamond | Orange |
+| 480 Volt Three Phase | `480v_three_phase` | Pentagon | Pentagon | Red |
+| WiFi | `wifi` | WiFi icon | Circle marker ID on WiFi page | Green |
+| Hanging Sign | `hanging_sign` | Circle | Circle | Cyan |
+| Custom Marker | `custom_drop` | Hexagon | Hexagon | Gray |
+
+Grid marker text is display-only and does not use internal labels:
+
+| Tool | Grid label |
+|---|---|
+| 120 Volt Single Phase | `120 V 1P` |
+| 208 Volt Single Phase | `208 V 1P` |
+| 208 Volt Three Phase | `208 V 3P` |
+| 480 Volt Three Phase | `480 V 3P` |
+| WiFi | `WiFi` |
+| Hanging Sign | `Hanging` |
+| Custom Marker | `Custom` |
+
+Numbered marker IDs still appear inside applicable marker shapes and are used for PDF/table matching. Internal labels like `E1`, `W1`, `S1`, and `C1` remain in saved data for compatibility but are not primary grid text.
 
 ## Amp Options
 
@@ -87,53 +127,92 @@ Amp options are type-specific.
 
 | Drop type | Valid amps | Default |
 |---|---|---|
-| 120 V | 10 AMP, 20 AMP | 10 AMP |
-| 208 V Single Phase | 30 AMP, 60 AMP | 30 AMP |
-| 208 V Three Phase | 20 AMP, 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 20 AMP |
-| 480 V Three Phase | 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 30 AMP |
+| 120 Volt Single Phase | 10 AMP, 20 AMP | 10 AMP |
+| 208 Volt Single Phase | 30 AMP, 60 AMP | 30 AMP |
+| 208 Volt Three Phase | 20 AMP, 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 20 AMP |
+| 480 Volt Three Phase | 30 AMP, 60 AMP, 100 AMP, 200 AMP, 400 AMP | 30 AMP |
 
-The quick on-grid amp prompt and the Selected Item panel both use the same option map.
+The quick on-grid amp prompt and Selected Item panel both use the same amp option map.
 
 If a marker changes type and its current amp is invalid for the new type, the app resets to the new type's default. Saved planner data is sanitized the same way during load.
 
-## WiFi Options
+## Selected Item Behavior
 
-WiFi markers use speed instead of amps:
+The Selected Item panel changes by selected item type.
 
-- Basic
-- Standard
-- High Speed
-- Custom
+Power drops:
 
-WiFi drops do not use 24-hour power.
+- Full type name
+- Nearest-edge coordinate readout
+- Type dropdown
+- Amp dropdown
+- 24-hour power checkbox
+- Notes
+- Delete marker
+
+WiFi:
+
+- Full type name
+- Nearest-edge coordinate readout
+- Type dropdown
+- Speed dropdown: Basic, Standard, High Speed, Custom
+- Notes
+- Delete marker
+
+Hanging Sign:
+
+- Full type name
+- Nearest-edge coordinate readout
+- Height field: "How far is the hanging sign from the ground?"
+- "Sign is rotating" checkbox
+- Notes
+- Delete marker
+- No Type field, amps, speed, or 24-hour power controls
+
+Custom Marker:
+
+- Full type name
+- Nearest-edge coordinate readout
+- Notes
+- Delete marker
+- No Type field, amps, speed, or 24-hour power controls
+
+Extension Cord:
+
+- Extension Cord Label
+- Connected drop readout
+- Endpoint location
+- Notes
+- Delete extension cord
+
+The Delete key removes a selected marker or extension cord unless focus is in an input, textarea, select, or contenteditable field.
 
 ## Marker Selection And Guides
 
-Users can select and drag markers. When selected, dotted measurement guides show the nearest horizontal and vertical booth-edge distances. The same nearest-edge logic is used in the Selected Item panel readout.
+Users can select and drag markers. When selected, dotted measurement guides show the nearest horizontal and vertical booth-edge distances. The same nearest-edge logic is used in the Selected Item panel.
 
-Deleting a marker also removes lines that start from that marker and line branches that depend on removed lines.
+Deleting a marker also removes extension cords that start from that marker and branch cords that depend on removed cords.
 
-## Line Tool
+## Extension Cord Tool
 
-The Line tool represents a utility run or extension from an existing point.
+The Extension Cord tool represents a utility run or cord from an existing point.
 
 Behavior:
 
-1. User selects Line.
-2. User clicks a drop or existing line endpoint to start.
+1. User selects Extension Cord.
+2. User clicks a drop or existing extension cord endpoint to start.
 3. User clicks a grid point to end.
 4. Endpoint snaps to 0.5 ft.
-5. New line is selected and the app returns to pointer mode.
-6. Users can edit line label and notes in the Selected Item panel.
-7. Line endpoints can be dragged.
-8. Lines persist in localStorage and are exported to PDF.
+5. New extension cord is selected and the app returns to pointer mode.
+6. Users can edit extension cord label and notes in Selected Item.
+7. Endpoints can be dragged.
+8. Extension cords persist in localStorage and are exported to PDF.
 
-Lines can start from either:
+Internal compatibility:
 
-- A marker (`fromMarkerId`)
-- Another line endpoint (`fromLineId`)
-
-Line Details in PDF describes drop connections by PDF marker ID and visible drop type. For line-to-line branches, it shows the source line endpoint rather than pretending it is a drop.
+- Extension cord data is still stored as `UtilityLine`.
+- Extension cords can start from a marker (`fromMarkerId`) or another extension cord endpoint (`fromLineId`).
+- Existing saved `lines` arrays continue to load.
 
 ## Booth Image Upload, Crop, And Rotate
 
@@ -149,8 +228,8 @@ Rules:
 
 - Maximum size: 5 MB
 - Crop aspect ratio follows current booth width/depth
-- Cropped image fits the booth grid area, not the browser window
-- Image renders behind grid, markers, lines, labels, and measurement guides
+- Cropped image fits the booth grid area
+- Image renders behind grid, markers, extension cords, labels, and measurement guides
 - Default opacity is low so the grid remains readable
 - Opacity can be adjusted from the right panel
 - Remove image clears it from state
@@ -161,7 +240,7 @@ Crop modal behavior:
 - Drag/pan image
 - Zoom slider
 - Rotate Left and Rotate Right in 90-degree increments
-- Apply Crop bakes crop, zoom, pan, and rotation into the saved image data URL
+- Apply Crop bakes crop, zoom, pan, and rotation into the saved data URL
 
 If the uploaded image already matches the booth ratio within tolerance, it is resized and saved directly without forcing the crop modal.
 
@@ -171,14 +250,27 @@ Single-open accordion sections:
 
 | Section | Contents |
 |---|---|
+| Help / How to Use | Compact numbered workflow, expanded by default |
 | Booth Details | Contact/show fields, booth dimensions, booth type |
 | Booth Position | Front, Back, Left, Right labels |
-| Selected Item | Drop or line editing |
+| Selected Item | Contextual marker or extension cord editing |
 | Booth Image Upload | Upload/change/remove image and opacity |
 | Export | PDF export button |
-| Help | SourceOne contact info |
 
 The panel footer contains the Reset planner button and a note that progress saves automatically in the browser.
+
+## Help / How To Use
+
+The Help / How to Use section is a simple collapsible right-panel section, not a modal or tour. It starts expanded by default and lists the main workflow:
+
+1. Confirm event and booth info.
+2. Add side labels.
+3. Select a power drop.
+4. Click the grid to place it.
+5. Update Selected Item details.
+6. Add extension cords if needed.
+7. Optionally upload a booth image.
+8. Export the PDF and email SourceOne.
 
 ## Persistence
 
@@ -194,7 +286,7 @@ Saved state includes:
 - Booth width, depth, and type
 - Side labels
 - Markers and marker details
-- Lines and line details
+- Extension cord data stored in `lines`
 - Selected tool
 - Cropped booth image data URL, opacity, filename, output size, and crop status
 - Setup completion state
@@ -204,41 +296,67 @@ No server, database, user account, or cloud sync is involved.
 Legacy behavior:
 
 - Old `main_drop` markers migrate to `120v`.
-- Old invalid amp values are replaced with the default amp for that marker's type.
+- Old `custom_marker` markers migrate to `custom_drop`.
+- Invalid amp values are replaced with the default amp for that marker type.
 
 ## PDF Export
 
-PDF export uses jsPDF and produces a portrait letter-size PDF.
+PDF export uses jsPDF and produces portrait letter-size PDF pages. Export pages are category-based and blank categories are skipped.
 
-Header:
+Page order:
 
-- SourceOne logo, fit proportionally so it is not distorted
+1. Electrical + Extension Cords
+2. WiFi
+3. Hanging Sign
+4. Custom Marker
+
+Common page content:
+
+- SourceOne logo
 - Title
 - Show info line
 - Booth info line
-
-Grid:
-
 - Full booth footprint regardless of current zoom/pan
 - Optional booth image behind the grid
 - Neutral black/gray grid lines over the image
 - Strong booth border
-- Utility markers with numeric IDs only
-- Utility lines with endpoint chips and length labels
+- Relevant utility markers with numeric IDs
+- Relevant extension cords with endpoint chips and length labels
 - Measurement guides from markers to nearest booth edges
-- Stable measured side labels around the grid
+- Stable side labels around the grid
+- Footer with email, phone, and fax
 
-Tables:
+Electrical + Extension Cords page:
 
-- Legend includes only marker types present in the plan
-- Drop Details: `ID | Type | Location | Amps / Speed | 24 Hour | Notes`
-- Line Details: `ID | Connected Drop ID | Connected Drop Type | End Location | Notes`
+- Includes all power drops and extension cords
+- Legend for present power drop types and Extension Cord if applicable
+- Drop Details: `ID | Type | Location | Details | Option | Notes`
+- Extension Cord Details: `ID | Connected To | Connected Type | End Location | Notes`
 
-PDF marker IDs, Drop Details IDs, and Line Details connected drop IDs use the same numbering helper. Internal labels like `E1` are not shown in PDF tables.
+WiFi page:
 
-Footer:
+- Includes WiFi markers only
+- Table: `ID | Location | Speed | Notes`
 
-- Email, phone, and fax on every page
+Hanging Sign page:
+
+- Includes Hanging Sign markers only
+- Table: `ID | Location | Height From Ground | Rotating | Notes`
+
+Custom Marker page:
+
+- Includes Custom Marker markers only
+- Table: `ID | Location | Notes`
+
+PDF marker IDs and table IDs use the same numbering helper. Internal labels like `E1` are not shown as table IDs. Extension cord rows describe source markers by PDF marker ID and visible type; extension-cord-to-extension-cord branches describe the source endpoint.
+
+PDF side-label layout notes:
+
+- `drawPdfSideLabels` draws all four labels.
+- Front and Back use centered horizontal anchors (`align: "center"`, `baseline: "middle"`).
+- Left and Right are rotated labels (angle 90 / 270) with manually computed anchors.
+- jsPDF's `align: "center"` is NOT used for rotated text: its centering offset is applied in page-horizontal space before the rotation matrix, which shifts the label perpendicular to its reading direction by half the text width (so the gap from the grid would change with text length).
+- Instead the rotated labels use `align: "left"` with the anchor computed manually from `getTextWidth`: half the text width offsets the anchor along the reading axis to vertically center on the grid, and `baselineToVisualCenter` offsets perpendicular to the baseline so the across-thickness center lands on a fixed line equidistant from the grid border. Left and Right share the same offset constant, so they are equidistant and text length never moves them.
 
 ## Current Data Models
 
@@ -249,6 +367,8 @@ type MarkerType =
   | '208v_three_phase'
   | '480v_three_phase'
   | 'wifi'
+  | 'hanging_sign'
+  | 'custom_drop'
 
 type AmpValue =
   | '10A'
@@ -269,6 +389,8 @@ type UtilityMarker = {
   amps?: AmpValue
   speed?: string
   is24Hour?: boolean
+  hangingSignHeight?: string
+  isRotating?: boolean
   notes?: string
 }
 
@@ -302,8 +424,6 @@ type BoothDetails = {
   }
 }
 ```
-
-`UtilityMarker.label` still exists for internal compatibility and auto-labeling, but it is not shown as the primary identifier in the PDF.
 
 ## Out Of Scope
 

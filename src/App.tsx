@@ -128,8 +128,13 @@ const MAX_RENDER_OUTPUT_EDGE = 1800
 const PDF_MARGIN = 32
 const PDF_FOOTER_BOTTOM_OFFSET = 20
 const PDF_SIDE_LABEL_FONT_SIZE = 8
-const PDF_SIDE_LABEL_GAP = 10
+const PDF_GRID_BORDER_WIDTH = 1.5
+const PDF_SIDE_LABEL_GAP = 12
 const PDF_SIDE_LABEL_LINE_HEIGHT = PDF_SIDE_LABEL_FONT_SIZE
+const PDF_LEGEND_ICON_SIZE = 7
+const PDF_LEGEND_ICON_LABEL_GAP = 8
+const PDF_LEGEND_ITEM_GAP = 24
+const PDF_LEGEND_ROW_GAP = 13
 const PDF_TABLE_HEADER_HEIGHT = 16
 const PDF_TABLE_ROW_MIN_HEIGHT = 17
 const PDF_TABLE_LINE_HEIGHT = 8
@@ -143,10 +148,10 @@ const markerOptions: Array<{
   label: string
   short: string
 }> = [
-  { type: '120v', label: '120 V', short: '120V' },
-  { type: '208v_single_phase', label: '208 V Single', short: '208 1P' },
-  { type: '208v_three_phase', label: '208 V Three', short: '208 3P' },
-  { type: '480v_three_phase', label: '480 V Three', short: '480 3P' },
+  { type: '120v', label: '120 Volt Single Phase', short: '120V' },
+  { type: '208v_single_phase', label: '208 Volt Single Phase', short: '208 1P' },
+  { type: '208v_three_phase', label: '208 Volt Three Phase', short: '208 3P' },
+  { type: '480v_three_phase', label: '480 Volt Three Phase', short: '480 3P' },
   { type: 'wifi', label: 'WiFi', short: 'WiFi' },
   { type: 'hanging_sign', label: 'Hanging Sign', short: 'Sign' },
   { type: 'custom_drop', label: 'Custom Marker', short: 'Custom' },
@@ -452,13 +457,13 @@ function markerDisplay(type: MarkerType) {
 function getToolbarLabelLines(type: MarkerType) {
   switch (type) {
     case '120v':
-      return ['120 V', 'Single']
+      return ['120 V', '1 Phase']
     case '208v_single_phase':
-      return ['208 V', 'Single']
+      return ['208 V', '1 Phase']
     case '208v_three_phase':
-      return ['208 V', 'Three']
+      return ['208 V', '3 Phase']
     case '480v_three_phase':
-      return ['480 V', 'Three']
+      return ['480 V', '3 Phase']
     case 'hanging_sign':
       return ['Hanging', 'Sign']
     case 'custom_drop':
@@ -471,13 +476,13 @@ function getToolbarLabelLines(type: MarkerType) {
 function getGridMarkerDisplayLabel(type: MarkerType) {
   switch (type) {
     case '120v':
-      return '120 V S'
+      return '120 V 1P'
     case '208v_single_phase':
-      return '208 V S'
+      return '208 V 1P'
     case '208v_three_phase':
-      return '208 V T'
+      return '208 V 3P'
     case '480v_three_phase':
-      return '480 V T'
+      return '480 V 3P'
     case 'wifi':
       return 'WiFi'
     case 'hanging_sign':
@@ -780,14 +785,25 @@ function drawPdfSideLabels(doc: jsPDF, booth: BoothDetails, grid: PdfGridLayout)
     left: getPdfSideLabel('left', booth),
     right: getPdfSideLabel('right', booth),
   }
-  const measuredHeights = Object.values(labels).map((label) => {
+  const getLabelHeight = (label: string) => {
     const dimensions = doc.getTextDimensions(label, {
       fontSize: PDF_SIDE_LABEL_FONT_SIZE,
     })
     return dimensions.h || PDF_SIDE_LABEL_LINE_HEIGHT
-  })
-  const labelHeight = Math.max(PDF_SIDE_LABEL_LINE_HEIGHT, ...measuredHeights)
-  const halfLabelHeight = labelHeight / 2
+  }
+  const horizontalLabelHeight = Math.max(
+    PDF_SIDE_LABEL_LINE_HEIGHT,
+    getLabelHeight(labels.back),
+    getLabelHeight(labels.front),
+  )
+  const horizontalLabelOffset = PDF_GRID_BORDER_WIDTH / 2 + PDF_SIDE_LABEL_GAP + horizontalLabelHeight / 2
+  const rotatedLabelCenterOffset = PDF_GRID_BORDER_WIDTH / 2 + PDF_SIDE_LABEL_GAP + PDF_SIDE_LABEL_LINE_HEIGHT / 2
+  const lineHeightFactor = doc.getLineHeightFactor()
+  const baselineDescent = PDF_SIDE_LABEL_LINE_HEIGHT * (lineHeightFactor - 1)
+  // Distance from the text baseline to the vertical visual center of the line box,
+  // measured toward the ascender. This mirrors how jsPDF's baseline:"middle" centers
+  // the Front/Back labels, so all four labels share the same visual centering model.
+  const baselineToVisualCenter = PDF_SIDE_LABEL_LINE_HEIGHT / 2 - baselineDescent
   const textOptions = {
     align: 'center' as const,
     baseline: 'middle' as const,
@@ -795,21 +811,44 @@ function drawPdfSideLabels(doc: jsPDF, booth: BoothDetails, grid: PdfGridLayout)
   const gridCenterX = grid.x + grid.width / 2
   const gridCenterY = grid.y + grid.height / 2
 
-  doc.text(labels.back, gridCenterX, grid.y - PDF_SIDE_LABEL_GAP - halfLabelHeight, textOptions)
+  // The line that the rotated label's perpendicular (across-thickness) center must sit on.
+  // Both sides use the same offset so Left/Right are equidistant from their grid borders.
+  const leftLabelCenterX = grid.x - rotatedLabelCenterOffset
+  const rightLabelCenterX = grid.x + grid.width + rotatedLabelCenterOffset
+
+  doc.text(labels.back, gridCenterX, grid.y - horizontalLabelOffset, textOptions)
   doc.text(
     labels.front,
     gridCenterX,
-    grid.y + grid.height + PDF_SIDE_LABEL_GAP + halfLabelHeight,
+    grid.y + grid.height + horizontalLabelOffset,
     textOptions,
   )
-  doc.text(labels.left, grid.x - PDF_SIDE_LABEL_GAP - halfLabelHeight, gridCenterY, {
-    ...textOptions,
-    angle: 90,
-  })
-  doc.text(labels.right, grid.x + grid.width + PDF_SIDE_LABEL_GAP + halfLabelHeight, gridCenterY, {
-    ...textOptions,
-    angle: 270,
-  })
+
+  // jsPDF's align:"center" is unreliable with rotated text: the centering offset is applied
+  // in page-horizontal space *before* the rotation matrix, which shifts the label
+  // perpendicular to its reading direction by half the text width (so the gap from the grid
+  // changes with text length). Instead anchor manually with align:"left" and account for the
+  // rotated baseline ourselves so the visual center is fixed regardless of text length.
+  const leftLabelWidth = doc.getTextWidth(labels.left)
+  const rightLabelWidth = doc.getTextWidth(labels.right)
+
+  // Left label reads bottom-to-top (angle 90): the ascender direction maps to -X, so the
+  // visual center sits baselineToVisualCenter to the left of the baseline anchor. Text grows
+  // upward from the anchor, so offsetting the anchor by +width/2 centers it on the grid.
+  doc.text(
+    labels.left,
+    leftLabelCenterX + baselineToVisualCenter,
+    gridCenterY + leftLabelWidth / 2,
+    { align: 'left', baseline: 'alphabetic', angle: 90 },
+  )
+  // Right label reads top-to-bottom (angle 270): the ascender direction maps to +X, and text
+  // grows downward from the anchor, so the offsets are mirrored.
+  doc.text(
+    labels.right,
+    rightLabelCenterX - baselineToVisualCenter,
+    gridCenterY - rightLabelWidth / 2,
+    { align: 'left', baseline: 'alphabetic', angle: 270 },
+  )
 }
 
 async function drawPdfGrid(doc: jsPDF, planner: PdfPlannerView, grid: PdfGridLayout) {
@@ -837,7 +876,7 @@ async function drawPdfGrid(doc: jsPDF, planner: PdfPlannerView, grid: PdfGridLay
   }
 
   doc.setDrawColor(17, 24, 39)
-  doc.setLineWidth(1.5)
+  doc.setLineWidth(PDF_GRID_BORDER_WIDTH)
   doc.rect(grid.x, grid.y, grid.width, grid.height)
 
   lines.forEach((line, index) => {
@@ -956,8 +995,10 @@ function drawLegend(
   doc.setFontSize(9)
   doc.text('Legend', x, y)
 
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const maxX = pageWidth - PDF_MARGIN
   let cursorX = x
-  let cursorY = y + 13
+  let cursorY = y + PDF_LEGEND_ROW_GAP
   const legendItems = [
     ...presentTypes.map((option) => ({
       type: option.type,
@@ -976,26 +1017,29 @@ function drawLegend(
   ]
 
   legendItems.forEach((item) => {
-    const itemWidth = Math.max(68, doc.getTextWidth(item.label) + 18)
-    if (cursorX + itemWidth > 560) {
+    const iconWidth = item.kind === 'line' ? PDF_LEGEND_ICON_SIZE + 3 : PDF_LEGEND_ICON_SIZE
+    const labelX = cursorX + iconWidth + PDF_LEGEND_ICON_LABEL_GAP
+    const itemWidth = iconWidth + PDF_LEGEND_ICON_LABEL_GAP + doc.getTextWidth(item.label)
+    if (cursorX > x && cursorX + itemWidth > maxX) {
       cursorX = x
-      cursorY += 13
+      cursorY += PDF_LEGEND_ROW_GAP
     }
     const [r, g, b] = hexToRgb(item.color)
     doc.setFillColor(r, g, b)
     doc.setDrawColor(r, g, b)
     if (item.kind === 'line') {
       doc.setLineWidth(1.4)
-      doc.line(cursorX, cursorY - 3, cursorX + 8, cursorY - 3)
-      doc.circle(cursorX + 8, cursorY - 3, 2.3, 'F')
+      const lineY = cursorY - 3
+      doc.line(cursorX, lineY, cursorX + iconWidth, lineY)
+      doc.circle(cursorX + iconWidth, lineY, 2.3, 'F')
     } else {
-      drawPdfMarkerShape(doc, item.type, cursorX + 4, cursorY - 3, 7, 'F')
+      drawPdfMarkerShape(doc, item.type, cursorX + PDF_LEGEND_ICON_SIZE / 2, cursorY - 3, PDF_LEGEND_ICON_SIZE, 'F')
     }
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(55, 65, 81)
     doc.setFontSize(7.5)
-    doc.text(item.label, cursorX + 12, cursorY)
-    cursorX += itemWidth
+    doc.text(item.label, labelX, cursorY)
+    cursorX += itemWidth + PDF_LEGEND_ITEM_GAP
   })
 
   return cursorY + 10
