@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { MarkerTypeIcon } from './components/MarkerTypeIcon'
 import { BottomToolbar } from './components/BottomToolbar'
+import { TextField } from './components/TextField'
+import { SetupModal } from './components/SetupModal'
 import {
   createCroppedImageDataUrl,
 } from './utils/cropImage'
@@ -21,6 +23,12 @@ import {
   type AmpValue,
   type UtilityMarker,
   type UtilityLine,
+  type BoothType,
+  type FlooringValue,
+  BOOTH_TYPES,
+  FLOORING_OPTIONS,
+  DEFAULT_FLOORING,
+  clamp,
   isElectrical,
   markerOptions,
   markerColors,
@@ -36,13 +44,6 @@ import {
   migrateMarkerType,
 } from './lib/plannerUtils'
 import { exportPlannerPdf } from './pdf/exportPlannerPdf'
-
-const BOOTH_TYPES = ['Inline', 'Corner', 'Peninsula', 'End Cap', 'Island'] as const
-type BoothType = (typeof BOOTH_TYPES)[number]
-
-const FLOORING_OPTIONS = ['Choose Flooring', 'Flooring Ordered', 'No Flooring Ordered', 'Unknown / Not Provided'] as const
-type FlooringValue = (typeof FLOORING_OPTIONS)[number]
-const DEFAULT_FLOORING: FlooringValue = 'Choose Flooring'
 
 // Map flooring values saved before the option list was renamed onto the current options.
 const LEGACY_FLOORING_MAP: Record<string, FlooringValue> = {
@@ -126,8 +127,6 @@ const ASPECT_RATIO_TOLERANCE = 0.01
 const MAX_RENDER_UPLOAD_BYTES = 5 * 1024 * 1024
 const DEFAULT_RENDER_OPACITY = 0.32
 const MAX_RENDER_OUTPUT_EDGE = 1800
-const dimensionOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 10)
-
 const ampOptionsByType: Record<ElectricalMarkerType, AmpValue[]> = {
   '120v': ['10A', '20A'],
   '208v_single_phase': ['30A', '60A'],
@@ -164,10 +163,6 @@ const defaultState: PlannerState = {
   lines: [],
   selectedTool: DEFAULT_TOOL,
   hasCompletedSetup: false,
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
 }
 
 function snapFeet(value: number) {
@@ -392,166 +387,6 @@ function readInitialState(): PlannerState {
   }
 }
 
-function SetupModal({
-  booth,
-  onChange,
-  onComplete,
-}: {
-  booth: BoothDetails
-  onChange: (booth: BoothDetails) => void
-  onComplete: () => void
-}) {
-  const [widthMode, setWidthMode] = useState(
-    dimensionOptions.includes(booth.width) ? String(booth.width) : 'custom',
-  )
-  const [depthMode, setDepthMode] = useState(
-    dimensionOptions.includes(booth.depth) ? String(booth.depth) : 'custom',
-  )
-
-  function updateField(field: keyof BoothDetails, value: string | number) {
-    onChange({ ...booth, [field]: value })
-  }
-
-  function updateDimension(field: 'width' | 'depth', mode: string) {
-    const value = mode === 'custom' ? booth[field] : Number(mode)
-    if (field === 'width') {
-      setWidthMode(mode)
-    } else {
-      setDepthMode(mode)
-    }
-    updateField(field, clamp(Number(value) || 20, 1, 100))
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="welcome-modal" role="dialog" aria-modal="true">
-        <div className="modal-brand">
-          <span className="sourceone-mark">SourceOne</span>
-          <span>Events</span>
-        </div>
-        <div className="modal-heading">
-          <p className="eyebrow">Booth Utility Planner</p>
-          <h1>Set up the booth layout</h1>
-          <p>
-            Enter the exhibitor, show, and booth dimensions to create a 1-foot
-            planning grid.
-          </p>
-        </div>
-
-        <div className="setup-grid">
-          <TextField label="Name" value={booth.name} onChange={(value) => updateField('name', value)} />
-          <TextField
-            label="Company Name"
-            value={booth.companyName}
-            onChange={(value) => updateField('companyName', value)}
-          />
-          <TextField label="Email" value={booth.email} onChange={(value) => updateField('email', value)} />
-          <TextField label="Phone" value={booth.phone} onChange={(value) => updateField('phone', value)} />
-          <TextField
-            label="Booth Number"
-            value={booth.boothNumber}
-            onChange={(value) => updateField('boothNumber', value)}
-          />
-          <TextField
-            label="Show Name"
-            value={booth.showName}
-            onChange={(value) => updateField('showName', value)}
-          />
-          <TextField
-            type="date"
-            label="Show Date"
-            value={booth.showDate}
-            onChange={(value) => updateField('showDate', value)}
-          />
-          <TextField
-            label="Show Location"
-            value={booth.showLocation}
-            onChange={(value) => updateField('showLocation', value)}
-          />
-
-          <DimensionField
-            label="Booth Width"
-            mode={widthMode}
-            value={booth.width}
-            onModeChange={(mode) => updateDimension('width', mode)}
-            onValueChange={(value) => updateField('width', value)}
-          />
-          <DimensionField
-            label="Booth Depth"
-            mode={depthMode}
-            value={booth.depth}
-            onModeChange={(mode) => updateDimension('depth', mode)}
-            onValueChange={(value) => updateField('depth', value)}
-          />
-          <label className="field-group">
-            <span className="field-label">Booth Type</span>
-            <select
-              value={booth.boothType}
-              onChange={(event) => updateField('boothType', event.target.value as BoothType)}
-            >
-              {BOOTH_TYPES.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </label>
-          <label className="field-group">
-            <span className="field-label">Flooring</span>
-            <select
-              value={booth.flooring}
-              onChange={(event) => updateField('flooring', event.target.value as FlooringValue)}
-            >
-              {FLOORING_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <div className="modal-actions">
-          <button type="button" className="primary-button" onClick={onComplete}>
-            Start planning
-          </button>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function DimensionField({
-  label,
-  mode,
-  value,
-  onModeChange,
-  onValueChange,
-}: {
-  label: string
-  mode: string
-  value: number
-  onModeChange: (mode: string) => void
-  onValueChange: (value: number) => void
-}) {
-  return (
-    <label className="field-group">
-      <span className="field-label">{label}</span>
-      <div className="dimension-row">
-        <select value={mode} onChange={(event) => onModeChange(event.target.value)}>
-          {dimensionOptions.map((option) => (
-            <option key={option} value={option}>
-              {option} ft
-            </option>
-          ))}
-          <option value="custom">Custom</option>
-        </select>
-        <input
-          type="number"
-          min={1}
-          max={100}
-          step={1}
-          value={value}
-          disabled={mode !== 'custom'}
-          onChange={(event) => onValueChange(clamp(Number(event.target.value) || 1, 1, 100))}
-        />
-      </div>
-    </label>
-  )
-}
-
 function RenderCropModal({
   cropRequest,
   onApply,
@@ -676,25 +511,6 @@ function RenderCropModal({
         </div>
       </section>
     </div>
-  )
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  type = 'text',
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  type?: string
-}) {
-  return (
-    <label className="field-group">
-      <span className="field-label">{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
   )
 }
 

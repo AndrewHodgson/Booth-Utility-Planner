@@ -1,6 +1,34 @@
 // Pure helpers and shared data model. Everything here is free of React, jsPDF,
 // and DOM dependencies so it can be imported by App.tsx, the PDF module, and tests.
 
+// ---------------------------------------------------------------------------
+// Booth configuration constants and derived types
+// ---------------------------------------------------------------------------
+
+export const BOOTH_TYPES = ['Inline', 'Corner', 'Peninsula', 'End Cap', 'Island'] as const
+export type BoothType = (typeof BOOTH_TYPES)[number]
+
+export const FLOORING_OPTIONS = [
+  'Choose Flooring',
+  'Flooring Ordered',
+  'No Flooring Ordered',
+  'Unknown / Not Provided',
+] as const
+export type FlooringValue = (typeof FLOORING_OPTIONS)[number]
+export const DEFAULT_FLOORING: FlooringValue = 'Choose Flooring'
+
+// ---------------------------------------------------------------------------
+// General-purpose math utility
+// ---------------------------------------------------------------------------
+
+export function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+// ---------------------------------------------------------------------------
+// Marker types
+// ---------------------------------------------------------------------------
+
 export type MarkerType =
   | '120v'
   | '208v_single_phase'
