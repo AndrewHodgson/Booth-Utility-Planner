@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   Download,
   RotateCcw,
@@ -11,14 +11,13 @@ import { BottomToolbar } from './components/BottomToolbar'
 import { TextField } from './components/TextField'
 import { SetupModal } from './components/SetupModal'
 import { RenderCropModal } from './components/RenderCropModal'
+import { GridLineLayer, MeasurementGuides, UtilityLineLayer, AmpPrompt } from './components/GridOverlays'
 import {
   createCroppedImageDataUrl,
 } from './utils/cropImage'
 import './App.css'
 import {
   type MarkerType,
-  type ElectricalMarkerType,
-  type AmpValue,
   type UtilityMarker,
   type UtilityLine,
   type BoothType,
@@ -40,6 +39,10 @@ import {
   getMarkerShapeNumber,
   collectLineSubtree,
   migrateMarkerType,
+  SNAP_FEET,
+  getAmpOptions,
+  getDefaultAmp,
+  getValidAmp,
 } from './lib/plannerUtils'
 import { exportPlannerPdf } from './pdf/exportPlannerPdf'
 
@@ -112,7 +115,6 @@ export type RenderCropRequest = {
 }
 
 const STORAGE_KEY = 'sourceone-booth-utility-planner'
-const SNAP_FEET = 0.5
 const DEFAULT_TOOL: MarkerType = '120v'
 const MIN_ZOOM = 1
 const MAX_ZOOM = 3
@@ -125,12 +127,6 @@ const ASPECT_RATIO_TOLERANCE = 0.01
 const MAX_RENDER_UPLOAD_BYTES = 5 * 1024 * 1024
 const DEFAULT_RENDER_OPACITY = 0.32
 const MAX_RENDER_OUTPUT_EDGE = 1800
-const ampOptionsByType: Record<ElectricalMarkerType, AmpValue[]> = {
-  '120v': ['10A', '20A'],
-  '208v_single_phase': ['30A', '60A'],
-  '208v_three_phase': ['20A', '30A', '60A', '100A', '200A', '400A'],
-  '480v_three_phase': ['30A', '60A', '100A', '200A', '400A'],
-}
 
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
 
@@ -271,22 +267,6 @@ function getMarkerLabel(type: MarkerType, markers: UtilityMarker[]) {
 
   const count = markers.filter((marker) => isElectrical(marker.type)).length + 1
   return `E${count}`
-}
-
-function getAmpOptions(type: MarkerType) {
-  return isElectrical(type) ? ampOptionsByType[type] : []
-}
-
-function getDefaultAmp(type: MarkerType): AmpValue | undefined {
-  return getAmpOptions(type)[0]
-}
-
-function getValidAmp(type: MarkerType, amps: unknown): AmpValue | undefined {
-  const options = getAmpOptions(type)
-  if (options.length === 0) {
-    return undefined
-  }
-  return options.includes(amps as AmpValue) ? (amps as AmpValue) : options[0]
 }
 
 function getGridMarkerDisplayLabel(type: MarkerType) {
@@ -1286,220 +1266,6 @@ function SideLabel({
       ) : (
         <span>{value || `${label} side label`}</span>
       )}
-    </div>
-  )
-}
-
-function MeasurementGuides({
-  marker,
-  booth,
-  isSelected,
-}: {
-  marker: UtilityMarker
-  booth: BoothDetails
-  isSelected: boolean
-}) {
-  const leftPct = (marker.x / booth.width) * 100
-  const topPct = ((booth.depth - marker.y) / booth.depth) * 100
-  const { horizontalSide, verticalSide, horizontalDistance, verticalDistance } = getEdgeDistances(
-    marker.x,
-    marker.y,
-    booth,
-  )
-  const horizontalLabelLeft =
-    horizontalSide === 'left' ? leftPct / 2 : leftPct + (100 - leftPct) / 2
-  const verticalLabelTop =
-    verticalSide === 'back' ? topPct / 2 : topPct + (100 - topPct) / 2
-
-  const guideStyle = {
-    '--guide-color': markerColors[marker.type],
-  } as CSSProperties
-
-  const showHorizontal = horizontalDistance > SNAP_FEET
-  const showVertical = verticalDistance > SNAP_FEET
-
-  if (!showHorizontal && !showVertical) {
-    return null
-  }
-
-  return (
-    <div
-      className={`measurement-layer ${isSelected ? 'is-selected' : ''}`}
-      style={guideStyle}
-      aria-hidden="true"
-    >
-      <div
-        className="measurement-dot"
-        style={{
-          left: `${leftPct}%`,
-          top: `${topPct}%`,
-        }}
-      />
-      {showHorizontal && (
-        <>
-          <div
-            className="measurement-guide measurement-guide-horizontal"
-            style={
-              horizontalSide === 'left'
-                ? { left: 0, width: `${leftPct}%`, top: `${topPct}%` }
-                : { left: `${leftPct}%`, right: 0, top: `${topPct}%` }
-            }
-          />
-          <div
-            className="measurement-label measurement-label-horizontal"
-            style={{
-              left: `${horizontalLabelLeft}%`,
-              top: `${topPct}%`,
-            }}
-          >
-            {formatFeet(horizontalDistance)}ft
-          </div>
-        </>
-      )}
-      {showVertical && (
-        <>
-          <div
-            className="measurement-guide measurement-guide-vertical"
-            style={
-              verticalSide === 'back'
-                ? { left: `${leftPct}%`, top: 0, height: `${topPct}%` }
-                : { left: `${leftPct}%`, top: `${topPct}%`, bottom: 0 }
-            }
-          />
-          <div
-            className="measurement-label measurement-label-vertical"
-            style={{
-              left: `${leftPct}%`,
-              top: `${verticalLabelTop}%`,
-            }}
-          >
-            {formatFeet(verticalDistance)}ft
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-function GridLineLayer({ booth }: { booth: BoothDetails }) {
-  const verticalLines = Array.from(
-    { length: Math.max(0, Math.ceil(booth.width) - 1) },
-    (_, index) => index + 1,
-  ).filter((x) => x < booth.width)
-  const horizontalLines = Array.from(
-    { length: Math.max(0, Math.ceil(booth.depth) - 1) },
-    (_, index) => index + 1,
-  ).filter((y) => y < booth.depth)
-
-  return (
-    <svg
-      className="grid-line-layer"
-      viewBox={`0 0 ${booth.width} ${booth.depth}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {verticalLines.map((x) => (
-        <line key={`v-${x}`} x1={x} y1={0} x2={x} y2={booth.depth} />
-      ))}
-      {horizontalLines.map((y) => (
-        <line key={`h-${y}`} x1={0} y1={y} x2={booth.width} y2={y} />
-      ))}
-    </svg>
-  )
-}
-
-function UtilityLineLayer({
-  booth,
-  markers,
-  lines,
-  selectedLineId,
-  onSelectLine,
-}: {
-  booth: BoothDetails
-  markers: UtilityMarker[]
-  lines: UtilityLine[]
-  selectedLineId: string | null
-  onSelectLine: (lineId: string) => void
-}) {
-  if (lines.length === 0) {
-    return null
-  }
-
-  return (
-    <svg
-      className="utility-line-layer"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-    >
-      {lines.map((line) => {
-        const startCoords = getLineStartCoords(line, markers, lines)
-        if (!startCoords) {
-          return null
-        }
-        const x1 = (startCoords.x / booth.width) * 100
-        const y1 = ((booth.depth - startCoords.y) / booth.depth) * 100
-        const x2 = (line.toX / booth.width) * 100
-        const y2 = ((booth.depth - line.toY) / booth.depth) * 100
-        const isSelected = line.id === selectedLineId
-        return (
-          <g key={line.id} className={isSelected ? 'is-selected' : undefined}>
-            <line
-              className="utility-line-hit"
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                onSelectLine(line.id)
-              }}
-            />
-            <line className="utility-line-path" x1={x1} y1={y1} x2={x2} y2={y2} />
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
-
-function AmpPrompt({
-  marker,
-  booth,
-  onSelect,
-  onClose,
-}: {
-  marker: UtilityMarker
-  booth: BoothDetails
-  onSelect: (amps: UtilityMarker['amps']) => void
-  onClose: () => void
-}) {
-  const ampOptions = getAmpOptions(marker.type)
-
-  return (
-    <div
-      className="amp-prompt"
-      style={{
-        left: `${(marker.x / booth.width) * 100}%`,
-        top: `${((booth.depth - marker.y) / booth.depth) * 100}%`,
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <label>
-        <span>Amps</span>
-        <select
-          value={getValidAmp(marker.type, marker.amps) || ''}
-          autoFocus
-          onChange={(event) => onSelect(event.target.value as UtilityMarker['amps'])}
-          onBlur={onClose}
-        >
-          {ampOptions.map((amps) => (
-            <option key={amps} value={amps}>
-              {formatAmps(amps)}
-            </option>
-          ))}
-        </select>
-      </label>
     </div>
   )
 }

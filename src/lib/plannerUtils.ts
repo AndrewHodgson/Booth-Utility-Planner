@@ -42,6 +42,34 @@ export type ElectricalMarkerType = Exclude<MarkerType, 'wifi' | 'hanging_sign' |
 
 export type AmpValue = '10A' | '20A' | '30A' | '60A' | '100A' | '200A' | '400A' | ''
 
+// Placement snap interval in feet (0.5 ft). Shared by grid coordinate rounding,
+// MeasurementGuides threshold, and any other placement logic.
+export const SNAP_FEET = 0.5
+
+// Amp options per electrical drop type. Used by amp helpers and the UI.
+export const ampOptionsByType: Record<ElectricalMarkerType, AmpValue[]> = {
+  '120v': ['10A', '20A'],
+  '208v_single_phase': ['30A', '60A'],
+  '208v_three_phase': ['20A', '30A', '60A', '100A', '200A', '400A'],
+  '480v_three_phase': ['30A', '60A', '100A', '200A', '400A'],
+}
+
+export function getAmpOptions(type: MarkerType): AmpValue[] {
+  return isElectrical(type) ? ampOptionsByType[type] : []
+}
+
+export function getDefaultAmp(type: MarkerType): AmpValue | undefined {
+  return getAmpOptions(type)[0]
+}
+
+export function getValidAmp(type: MarkerType, amps: unknown): AmpValue | undefined {
+  const options = getAmpOptions(type)
+  if (options.length === 0) {
+    return undefined
+  }
+  return options.includes(amps as AmpValue) ? (amps as AmpValue) : options[0]
+}
+
 export type UtilityMarker = {
   id: string
   label: string
