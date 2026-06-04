@@ -14,7 +14,14 @@ The app is a layout and communication tool. It is not an ordering, pricing, paym
 | Image crop | react-easy-crop + canvas helpers |
 | PDF export | jsPDF |
 
-Most app code lives in `src/App.tsx` and `src/App.css`. Image crop helpers live in `src/utils/cropImage.ts`.
+Current project structure:
+
+- `src/App.tsx` owns planner state, canvas behavior, persistence, upload/export/reset handlers, and top-level composition.
+- `src/components/` contains extracted UI pieces including the bottom toolbar, right panel, setup modal, crop modal, grid overlays, marker icons, and shared panel fields.
+- `src/lib/` contains planner data types, marker metadata, validation, migration, geometry, and other pure helpers.
+- `src/pdf/` contains the PDF export module.
+- `src/utils/` contains image/crop utilities.
+- `src/App.css` contains the app styling.
 
 ## Running Locally
 
