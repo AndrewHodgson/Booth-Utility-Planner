@@ -50,7 +50,7 @@ The planner stores one `PlannerState` object in `localStorage` under:
 sourceone-booth-utility-planner
 ```
 
-Progress is saved automatically and restored on refresh.
+Progress is saved automatically and restored on refresh. If a save fails (for example because a large booth image data URL exceeds the browser's storage quota), a non-blocking warning appears in the panel footer: "Could not save changes locally. The booth image may be too large." The planner remains fully usable and the warning clears on the next successful save.
 
 ```ts
 type PlannerState = {
@@ -88,6 +88,7 @@ The setup modal and Booth Details panel collect:
 - Width
 - Depth
 - Booth Type
+- Flooring
 
 Width and depth support preset 10 ft increments from 10 ft to 100 ft plus custom values clamped between 1 ft and 100 ft. The default booth is 20 ft x 20 ft.
 
@@ -98,6 +99,15 @@ Booth types:
 - Peninsula
 - End Cap
 - Island
+
+Flooring options:
+
+- Choose Flooring (default)
+- Flooring Ordered
+- No Flooring Ordered
+- Unknown / Not Provided
+
+Flooring appears in the booth details line of every exported PDF page alongside booth number, size, and booth type. Legacy saved values `Carpeted` and `Not Carpeted` are migrated to `Flooring Ordered` and `No Flooring Ordered` on load.
 
 Booth Position stores editable labels for Front, Back, Left, and Right. Side labels can also be edited on the web grid by double-clicking them. They persist in `booth.sideLabels` and appear in PDF export.
 
@@ -171,7 +181,7 @@ Toolbar labels:
 | Hanging Sign | `hanging_sign` | Circle | `Hanging` | Circle | Cyan |
 | Custom Marker | `custom_drop` | Hexagon | `Custom` | Hexagon | Gray |
 
-Grid labels are user-facing utility labels only. Internal labels like `E1`, `W1`, `S1`, and `C1` are not shown as the grid text. Numbered marker IDs still appear inside applicable marker shapes and are used for selected items, extension cord connections, and PDF tables.
+Grid labels are user-facing utility labels only. Internal labels like `E1`, `W1`, `S1`, and `C1` are not shown as the grid text. Numbered marker IDs appear inside applicable marker shapes. These numbers use the same category-based counting as the PDF: all electrical drops share one sequence, Hanging Signs share one sequence, and Custom Markers share one sequence. The on-screen number inside a shape matches the marker ID on the corresponding PDF page and in the detail tables. WiFi markers display the WiFi icon on the canvas rather than a numbered shape; WiFi markers are still numbered sequentially in the PDF WiFi details table.
 
 ## Amp Options
 
@@ -194,7 +204,7 @@ Power drops:
 
 - Show full type name
 - Show nearest-edge coordinate readout
-- Type dropdown
+- Type dropdown (lists power drops and WiFi; Hanging Sign and Custom Marker are not conversion targets and do not appear)
 - Amp dropdown filtered by power type
 - 24-hour power checkbox
 - Notes
@@ -204,7 +214,7 @@ WiFi:
 
 - Show full type name
 - Show nearest-edge coordinate readout
-- Type dropdown
+- Type dropdown (lists power drops and WiFi; Hanging Sign and Custom Marker are not conversion targets and do not appear)
 - Speed dropdown: Basic, Standard, High Speed, Custom
 - Notes
 - Delete marker button
@@ -230,7 +240,7 @@ Custom Marker:
 Extension Cord:
 
 - Extension Cord Label
-- Connected drop readout
+- Connected source readout: shows "Marker N — Full Type Name" if connected to a marker, or "Extension Cord L1 endpoint" if connected to another cord's endpoint
 - Endpoint location
 - Notes
 - Delete extension cord button
@@ -246,6 +256,8 @@ The Extension Cord tool represents a utility run from an existing point.
 3. Click a grid point to place the endpoint.
 4. The endpoint snaps to 0.5 ft.
 5. The new extension cord is selected and the app returns to pointer mode.
+
+Deletion: deleting a marker removes all extension cords rooted at that marker and their entire descendant tree recursively. Deleting an extension cord removes that cord and all its descendants recursively. Sibling cords (branched from the same parent) are not affected. No orphan endpoint chips or ghost PDF rows remain after deletion.
 
 Extension cords can start from either:
 
@@ -277,6 +289,7 @@ The Booth Image Upload panel supports a top-down booth plan or render behind the
 - The image renders behind the grid, markers, extension cords, labels, and measurement guides
 - Remove image clears it from planner state
 - Reset planner clears the image
+- If booth width/depth changes after an image is uploaded and the ratio no longer matches within tolerance, a warning appears in the Booth Image Upload panel: "Booth dimensions changed. Re-upload or re-crop the booth image for the correct ratio." The image is not automatically deleted.
 
 ## Help / How To Use
 

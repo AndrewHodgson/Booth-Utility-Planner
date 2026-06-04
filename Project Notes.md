@@ -129,7 +129,7 @@ Grid marker text is display-only and does not use internal labels:
 | Hanging Sign | `Hanging` |
 | Custom Marker | `Custom` |
 
-Numbered marker IDs still appear inside applicable marker shapes and are used for PDF/table matching. Internal labels like `E1`, `W1`, `S1`, and `C1` remain in saved data for compatibility but are not primary grid text.
+Numbered marker IDs appear inside applicable marker shapes and are used for PDF/table matching. These numbers use the same category-based counting as the PDF: all electrical drops share one sequence, Hanging Signs share one sequence, and Custom Markers share one sequence. The on-screen shape number matches the marker ID on the corresponding PDF page and in the detail tables. WiFi markers display the WiFi icon on the canvas rather than a numbered shape; they are still numbered sequentially in the PDF WiFi details table. Internal labels like `E1`, `W1`, `S1`, and `C1` remain in saved data for compatibility but are not shown to users.
 
 ## Amp Options
 
@@ -154,7 +154,7 @@ Power drops:
 
 - Full type name
 - Nearest-edge coordinate readout
-- Type dropdown
+- Type dropdown (lists power drops and WiFi; Hanging Sign and Custom Marker are not conversion targets and do not appear)
 - Amp dropdown
 - 24-hour power checkbox
 - Notes
@@ -164,7 +164,7 @@ WiFi:
 
 - Full type name
 - Nearest-edge coordinate readout
-- Type dropdown
+- Type dropdown (lists power drops and WiFi; Hanging Sign and Custom Marker are not conversion targets and do not appear)
 - Speed dropdown: Basic, Standard, High Speed, Custom
 - Notes
 - Delete marker
@@ -190,7 +190,7 @@ Custom Marker:
 Extension Cord:
 
 - Extension Cord Label
-- Connected drop readout
+- Connected source readout: shows "Marker N — Full Type Name" if connected to a marker, or "Extension Cord L1 endpoint" if connected to another cord's endpoint
 - Endpoint location
 - Notes
 - Delete extension cord
@@ -201,7 +201,7 @@ The Delete key removes a selected marker or extension cord unless focus is in an
 
 Users can select and drag markers. When selected, dotted measurement guides show the nearest horizontal and vertical booth-edge distances. The same nearest-edge logic is used in the Selected Item panel.
 
-Deleting a marker also removes extension cords that start from that marker and branch cords that depend on removed cords.
+Deleting a marker removes all extension cords rooted at that marker and their entire descendant tree recursively (including cords branched from removed cords at any depth). Deleting an extension cord removes that cord and all its descendants recursively. Sibling cords branched from the same parent are not affected. No orphan endpoint chips or ghost PDF rows remain after deletion.
 
 ## Extension Cord Tool
 
@@ -217,6 +217,8 @@ Behavior:
 6. Users can edit extension cord label and notes in Selected Item.
 7. Endpoints can be dragged.
 8. Extension cords persist in localStorage and are exported to PDF.
+
+Deletion cascade: deleting a marker removes all extension cords rooted at that marker and all their descendants recursively. Deleting an extension cord removes that cord and all cords branched from it at any depth. Sibling cords (branched from the same parent) are not affected.
 
 Internal compatibility:
 
@@ -253,6 +255,8 @@ Crop modal behavior:
 - Apply Crop bakes crop, zoom, pan, and rotation into the saved data URL
 
 If the uploaded image already matches the booth ratio within tolerance, it is resized and saved directly without forcing the crop modal.
+
+If booth width/depth changes after an image is uploaded and the ratio no longer matches within tolerance, the Booth Image Upload panel shows a warning: "Booth dimensions changed. Re-upload or re-crop the booth image for the correct ratio." The image is not automatically deleted.
 
 ## Right Panel
 
@@ -302,6 +306,8 @@ Saved state includes:
 - Setup completion state
 
 No server, database, user account, or cloud sync is involved.
+
+If the localStorage write fails — typically because a large booth image data URL exceeds the storage quota — a non-blocking warning appears in the panel footer: "Could not save changes locally. The booth image may be too large." The planner remains fully usable and the warning clears on the next successful save.
 
 Legacy behavior:
 
