@@ -27,7 +27,7 @@
   inset: calc(env(safe-area-inset-top) + 16px) 16px auto;
   z-index: 30;
   display: none;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px;
   pointer-events: none;
@@ -40,30 +40,22 @@
   pointer-events: auto;
 }
 
-.mobile-menu-button {
+.mobile-configure-button {
   display: inline-flex;
-  width: 44px;
-  height: 44px;
-  cursor: pointer;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(217, 222, 231, 0.92);
+  height: 36px;
+  cursor: pointer;
+  border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--sourceone-blue);
-  box-shadow: 0 12px 28px rgba(31, 41, 55, 0.16);
-  backdrop-filter: blur(12px);
-  pointer-events: auto;
-}
-
-.mobile-topbar-title {
-  min-width: 0;
-  color: var(--sourceone-blue);
-  font-size: 13px;
+  background: var(--sourceone-blue);
+  color: #fff;
+  padding: 0 14px;
+  font-size: 12px;
   font-weight: 850;
-  line-height: 1.15;
-  text-align: center;
-  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(33, 70, 112, 0.22);
   pointer-events: auto;
 }
 
@@ -1286,17 +1278,18 @@ textarea {
   }
 
   .grid-measure-width {
-    left: 0;
-    bottom: -30px;
+    right: 0;
+    left: auto;
+    bottom: -28px;
     transform: none;
   }
 
   .grid-measure-depth {
-    top: auto;
-    bottom: 12px;
+    top: 50%;
+    bottom: auto;
     left: -28px;
-    transform: rotate(-90deg);
-    transform-origin: left bottom;
+    transform: translateY(-50%) rotate(-90deg);
+    transform-origin: center;
   }
 
   .side-label {
@@ -1400,7 +1393,7 @@ textarea {
   }
 
   .grid-helper-text {
-    top: calc(100% + 50px);
+    top: calc(100% + 34px);
     margin-top: 0;
     color: #475569;
     font-size: 8px;

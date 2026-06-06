@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { Menu } from 'lucide-react'
 import { MarkerTypeIcon } from './components/MarkerTypeIcon'
 import { BottomToolbar } from './components/BottomToolbar'
 import { RightPanel } from './components/RightPanel'
@@ -925,14 +924,13 @@ function App() {
       {!isMobilePanelOpen && (
         <div className="mobile-topbar">
           <img className="mobile-logo" src={SOURCEONE_LOGO_PATH} alt="SourceOne Events" />
-          <span className="mobile-topbar-title">Booth Utility Planner</span>
           <button
             type="button"
-            className="mobile-menu-button"
-            aria-label="Open planner menu"
+            className="mobile-configure-button"
+            aria-label="Open planner settings"
             onClick={() => setIsMobilePanelOpen(true)}
           >
-            <Menu size={20} />
+            Configure
           </button>
         </div>
       )}
