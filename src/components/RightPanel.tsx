@@ -1,4 +1,4 @@
-import { Download, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { Download, RotateCcw, Trash2, Upload, X } from 'lucide-react'
 import {
   type MarkerType,
   type BoothType,
@@ -26,6 +26,8 @@ import { NumberField, PanelSection } from './PanelFields'
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
 
 export function RightPanel({
+  isMobileDrawerOpen = false,
+  onMobileDrawerClose,
   planner,
   selectedMarker,
   selectedLine,
@@ -47,6 +49,8 @@ export function RightPanel({
   onExport,
   onReset,
 }: {
+  isMobileDrawerOpen?: boolean
+  onMobileDrawerClose?: () => void
   planner: PlannerState
   selectedMarker?: UtilityMarker
   selectedLine?: UtilityLine
@@ -85,12 +89,22 @@ export function RightPanel({
   }
 
   return (
-    <aside className="right-panel">
+    <aside className={`right-panel ${isMobileDrawerOpen ? 'is-mobile-drawer-open' : ''}`}>
       <div className="panel-header">
         <img className="panel-logo" src={sourceOneLogoPath} alt="SourceOne Events" />
         <div className="panel-title">
           <h2>Booth Utility Planner</h2>
         </div>
+        {onMobileDrawerClose && (
+          <button
+            type="button"
+            className="panel-close-button"
+            aria-label="Close planner menu"
+            onClick={onMobileDrawerClose}
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <PanelSection

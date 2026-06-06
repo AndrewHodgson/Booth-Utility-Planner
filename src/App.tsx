@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { Menu } from 'lucide-react'
 import { MarkerTypeIcon } from './components/MarkerTypeIcon'
 import { BottomToolbar } from './components/BottomToolbar'
 import { RightPanel } from './components/RightPanel'
@@ -105,6 +106,7 @@ export type RenderCropRequest = {
 }
 
 const STORAGE_KEY = 'sourceone-booth-utility-planner'
+const SOURCEONE_LOGO_PATH = '/SourceOne-Logo-RGB.svg'
 const DEFAULT_TOOL: MarkerType = '120v'
 const MIN_ZOOM = 1
 const MAX_ZOOM = 3
@@ -372,6 +374,7 @@ function App() {
   const [lineStartLineId, setLineStartLineId] = useState<string | null>(null)
   const [draggingLineEndId, setDraggingLineEndId] = useState<string | null>(null)
   const [openPanelSectionId, setOpenPanelSectionId] = useState<string | null>('help')
+  const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false)
   const [ampPromptMarkerId, setAmpPromptMarkerId] = useState<string | null>(null)
   const [panStart, setPanStart] = useState<{
     clientX: number
@@ -396,7 +399,7 @@ function App() {
     const isLargeGrid =
       planner.booth.width > LARGE_GRID_THRESHOLD_FT ||
       planner.booth.depth > LARGE_GRID_THRESHOLD_FT
-    const availableWidth = Math.max(260, stageSize.width - 300)
+    const availableWidth = Math.max(260, stageSize.width - (stageSize.width < 700 ? 80 : 300))
     const availableHeight = Math.max(260, stageSize.height - 270)
     const fitScale = Math.min(
       availableWidth / planner.booth.width,
@@ -919,6 +922,21 @@ function App() {
 
   return (
     <main className="app-shell">
+      {!isMobilePanelOpen && (
+        <div className="mobile-topbar">
+          <img className="mobile-logo" src={SOURCEONE_LOGO_PATH} alt="SourceOne Events" />
+          <span className="mobile-topbar-title">Booth Utility Planner</span>
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-label="Open planner menu"
+            onClick={() => setIsMobilePanelOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
+        </div>
+      )}
+
       <section className="workspace">
         <div
           className={`canvas-stage ${isPanMode ? 'is-pan-mode' : ''} ${
@@ -1147,6 +1165,8 @@ function App() {
           isPanMode={isPanMode}
           isPointerMode={isPointerMode}
           isLineMode={isLineMode}
+          selectedMarkerId={selectedMarkerId}
+          selectedLineId={selectedLineId}
           onSelectTool={selectTool}
           onSelectLineTool={selectLineTool}
           onZoomIn={() => setZoomLevel(zoom + ZOOM_STEP)}
@@ -1154,10 +1174,16 @@ function App() {
           onZoomReset={fitScreen}
           onTogglePan={togglePanMode}
           onSelectPointer={selectPointerMode}
+          onDeleteSelected={() => {
+            if (selectedMarkerId) deleteMarker(selectedMarkerId)
+            else if (selectedLineId) deleteLine(selectedLineId)
+          }}
         />
       </section>
 
       <RightPanel
+        isMobileDrawerOpen={isMobilePanelOpen}
+        onMobileDrawerClose={() => setIsMobilePanelOpen(false)}
         planner={planner}
         selectedMarker={selectedMarker}
         selectedLine={selectedLine}
