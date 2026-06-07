@@ -34,7 +34,7 @@ function getMobilePickerLabel(type: MarkerType): string {
     case '208v_single_phase': return '208 V 1 Phase'
     case '208v_three_phase': return '208 V 3 Phase'
     case '480v_three_phase': return '480 V 3 Phase'
-    case 'wifi': return 'WiFi'
+    case 'wifi': return 'Internet'
     case 'hanging_sign': return 'Hanging Sign'
     case 'custom_drop': return 'Custom'
   }
@@ -55,7 +55,7 @@ function getToolbarLabelLines(type: MarkerType) {
     case 'custom_drop':
       return ['Custom', 'Marker']
     case 'wifi':
-      return ['WiFi']
+      return ['Internet']
   }
 }
 
@@ -192,6 +192,16 @@ export function BottomToolbar({
             >
               <span className="shortcut-badge">5</span>
               <Maximize2 size={16} />
+            </button>
+            <button
+              type="button"
+              className="toolbar-button toolbar-button-compact"
+              title="Delete selected"
+              aria-label="Delete selected item"
+              disabled={!selectedMarkerId && !selectedLineId}
+              onClick={onDeleteSelected}
+            >
+              <Trash2 size={16} />
             </button>
           </div>
         </div>

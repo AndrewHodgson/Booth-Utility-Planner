@@ -59,9 +59,9 @@ describe('getActivePdfCategoryTitles', () => {
     ).toContain('Electrical + Extension Cords')
   })
 
-  it('includes WiFi page only when a WiFi marker exists', () => {
-    expect(getActivePdfCategoryTitles([marker('m1', 'wifi')], [])).toContain('WiFi')
-    expect(getActivePdfCategoryTitles([marker('m1', '120v')], [])).not.toContain('WiFi')
+  it('includes Internet page only when an Internet marker exists', () => {
+    expect(getActivePdfCategoryTitles([marker('m1', 'wifi')], [])).toContain('Internet')
+    expect(getActivePdfCategoryTitles([marker('m1', '120v')], [])).not.toContain('Internet')
   })
 
   it('includes Hanging Sign page only when a hanging sign exists', () => {
@@ -102,7 +102,7 @@ describe('getActivePdfCategoryTitles', () => {
     ]
     expect(getActivePdfCategoryTitles(markers, [])).toEqual([
       'Electrical + Extension Cords',
-      'WiFi',
+      'Internet',
       'Hanging Sign',
       'Custom Marker',
     ])

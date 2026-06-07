@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { clamp } from '../lib/plannerUtils'
 
 export function NumberField({
@@ -10,6 +10,19 @@ export function NumberField({
   value: number
   onChange: (value: number) => void
 }) {
+  const [draft, setDraft] = useState<string>(String(value))
+
+  // Keep draft in sync when the committed value changes externally
+  useEffect(() => {
+    setDraft(String(value))
+  }, [value])
+
+  function commit(raw: string) {
+    const parsed = clamp(Number(raw) || 1, 1, 100)
+    onChange(parsed)
+    setDraft(String(parsed))
+  }
+
   return (
     <label className="field-group">
       <span className="field-label">{label}</span>
@@ -17,8 +30,14 @@ export function NumberField({
         type="number"
         min={1}
         max={100}
-        value={value}
-        onChange={(event) => onChange(clamp(Number(event.target.value) || 1, 1, 100))}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={(event) => commit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.currentTarget.blur()
+          }
+        }}
       />
     </label>
   )

@@ -199,46 +199,103 @@ export function UtilityLineLayer({
 }
 
 // ---------------------------------------------------------------------------
-// AmpPrompt — on-grid quick-select popover shown after placing a power drop
+// MarkerPrompt — fixed-position popover for marker-specific quick edits.
+// Rendered at the app-shell level (outside the transformed booth-grid) so it
+// is never clipped by a CSS transform stacking context or overflow:hidden parent.
+// screenX/screenY are the marker's viewport pixel coordinates (from
+// getBoundingClientRect on the grid + marker's fractional position).
+//
+// - Electrical markers  → AMP dropdown
+// - Internet marker     → free-text speed input
+// - Hanging Sign marker → free-text height input
 // ---------------------------------------------------------------------------
 
-export function AmpPrompt({
+export function MarkerPrompt({
   marker,
-  booth,
-  onSelect,
+  screenX,
+  screenY,
+  onSave,
   onClose,
 }: {
   marker: UtilityMarker
-  booth: BoothDetails
-  onSelect: (amps: UtilityMarker['amps']) => void
+  screenX: number
+  screenY: number
+  onSave: (patch: Partial<Pick<UtilityMarker, 'amps' | 'speed' | 'hangingSignHeight'>>) => void
   onClose: () => void
 }) {
+  const isWifi = marker.type === 'wifi'
+  const isHangingSign = marker.type === 'hanging_sign'
   const ampOptions = getAmpOptions(marker.type)
 
+  const label = isWifi ? 'Speed' : isHangingSign ? 'Height from ground' : 'Amps'
+
   return (
-    <div
-      className="amp-prompt"
-      style={{
-        left: `${(marker.x / booth.width) * 100}%`,
-        top: `${((booth.depth - marker.y) / booth.depth) * 100}%`,
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <label>
-        <span>Amps</span>
-        <select
-          value={getValidAmp(marker.type, marker.amps) || ''}
-          autoFocus
-          onChange={(event) => onSelect(event.target.value as UtilityMarker['amps'])}
-          onBlur={onClose}
-        >
-          {ampOptions.map((amps) => (
-            <option key={amps} value={amps}>
-              {formatAmps(amps)}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
+    <>
+      {/* Backdrop: covers the full viewport below the popup. Any tap/click outside
+          the popup hits this and dismisses it — no document-listener timing races. */}
+      <div className="amp-prompt-backdrop" onPointerDown={onClose} />
+      <div
+        className="amp-prompt"
+        style={{ left: screenX, top: screenY }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="amp-prompt-header">
+          <span>{label}</span>
+          <button
+            type="button"
+            className="amp-prompt-close"
+            aria-label="Dismiss"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        {isWifi && (
+          // No autoFocus / onBlur — those caused immediate close (focus stolen by
+          // the marker button after click, or synthesized events on mobile). Save
+          // live on every change; close only via Enter, backdrop, or ×.
+          <input
+            className="amp-prompt-input"
+            type="text"
+            placeholder="e.g. 100 Mbps"
+            value={marker.speed ?? ''}
+            onChange={(e) => onSave({ speed: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') onClose() }}
+          />
+        )}
+
+        {isHangingSign && (
+          <input
+            className="amp-prompt-input"
+            type="text"
+            placeholder="e.g. 14 ft"
+            value={marker.hangingSignHeight ?? ''}
+            onChange={(e) => onSave({ hangingSignHeight: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') onClose() }}
+          />
+        )}
+
+        {!isWifi && !isHangingSign && (
+          <select
+            value={getValidAmp(marker.type, marker.amps) || ''}
+            onChange={(event) => {
+              onSave({ amps: event.target.value as UtilityMarker['amps'] })
+              onClose()
+            }}
+          >
+            {ampOptions.map((amps) => (
+              <option key={amps} value={amps}>
+                {formatAmps(amps)}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </>
   )
 }
+
+/** @deprecated Use MarkerPrompt instead */
+export const AmpPrompt = MarkerPrompt

@@ -828,10 +828,10 @@ function getPdfCategories(planner: PlannerState): PdfCategory[] {
       drawDetails: drawElectricalDetails,
     },
     {
-      title: 'WiFi',
+      title: 'Internet',
       markers: wifiMarkers,
       lines: [],
-      drawDetails: drawMarkerDetails('WiFi Details', drawWifiTable),
+      drawDetails: drawMarkerDetails('Internet Details', drawWifiTable),
     },
     {
       title: 'Hanging Sign',

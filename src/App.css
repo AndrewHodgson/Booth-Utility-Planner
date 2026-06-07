@@ -125,29 +125,17 @@
   pointer-events: none;
 }
 
-.grid-measure {
+.grid-size-label {
   position: absolute;
   z-index: 24;
-  border-radius: 4px;
-  background: #172033;
-  color: #fff;
-  padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.2;
+  top: -26px;
+  right: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
   pointer-events: none;
-}
-
-.grid-measure-width {
-  left: 50%;
-  bottom: -30px;
-  transform: translateX(-50%);
-}
-
-.grid-measure-depth {
-  top: 50%;
-  left: -45px;
-  transform: translateY(-50%) rotate(-90deg);
 }
 
 .booth-number-label {
@@ -312,9 +300,15 @@
   flex: 0 0 auto;
 }
 
+.amp-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
 .amp-prompt {
-  position: absolute;
-  z-index: 60;
+  position: fixed;
+  z-index: 200;
   transform: translate(-50%, calc(-100% - 24px));
   border: 1px solid rgba(33, 70, 112, 0.22);
   border-radius: 7px;
@@ -323,19 +317,43 @@
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
 }
 
-.amp-prompt label {
-  display: grid;
-  gap: 5px;
+.amp-prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: #374151;
   font-size: 11px;
   font-weight: 850;
+  margin-bottom: 5px;
 }
 
-.amp-prompt select {
+.amp-prompt-close {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 15px;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.amp-prompt-close:hover {
+  color: #111827;
+}
+
+.amp-prompt select,
+.amp-prompt-input {
+  display: block;
   min-height: 30px;
-  min-width: 78px;
+  min-width: 120px;
   padding: 5px 8px;
   font-size: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  background: #fff;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .marker-120v {
@@ -1270,26 +1288,9 @@ textarea {
     font-weight: 850;
   }
 
-  .grid-measure {
-    border-radius: 4px;
-    padding: 2px 4px;
-    font-size: 8px;
-    font-weight: 800;
-  }
-
-  .grid-measure-width {
-    right: 0;
-    left: auto;
-    bottom: -28px;
-    transform: none;
-  }
-
-  .grid-measure-depth {
-    top: 50%;
-    bottom: auto;
-    left: -28px;
-    transform: translateY(-50%) rotate(-90deg);
-    transform-origin: center;
+  .grid-size-label {
+    top: -24px;
+    font-size: 10px;
   }
 
   .side-label {
@@ -1455,6 +1456,10 @@ textarea {
 }
 
 @media (max-width: 760px) {
+  .shortcut-badge {
+    display: none;
+  }
+
   .workspace {
     padding: 18px 16px 96px;
   }

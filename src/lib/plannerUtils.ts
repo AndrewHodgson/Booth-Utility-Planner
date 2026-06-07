@@ -113,7 +113,7 @@ export const markerOptions: Array<{
   { type: '208v_single_phase', label: '208 Volt Single Phase', short: '208 1P' },
   { type: '208v_three_phase', label: '208 Volt Three Phase', short: '208 3P' },
   { type: '480v_three_phase', label: '480 Volt Three Phase', short: '480 3P' },
-  { type: 'wifi', label: 'WiFi', short: 'WiFi' },
+  { type: 'wifi', label: 'Internet', short: 'Net' },
   { type: 'hanging_sign', label: 'Hanging Sign', short: 'Sign' },
   { type: 'custom_drop', label: 'Custom Marker', short: 'Custom' },
 ]
@@ -273,7 +273,7 @@ export function getActivePdfCategoryTitles(
   if (markers.some((m) => isElectrical(m.type)) || lines.length > 0) {
     titles.push('Electrical + Extension Cords')
   }
-  if (markers.some((m) => m.type === 'wifi')) titles.push('WiFi')
+  if (markers.some((m) => m.type === 'wifi')) titles.push('Internet')
   if (markers.some((m) => m.type === 'hanging_sign')) titles.push('Hanging Sign')
   if (markers.some((m) => m.type === 'custom_drop')) titles.push('Custom Marker')
   return titles

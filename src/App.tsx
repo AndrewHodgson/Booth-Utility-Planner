@@ -5,7 +5,7 @@ import { BottomToolbar } from './components/BottomToolbar'
 import { RightPanel } from './components/RightPanel'
 import { SetupModal } from './components/SetupModal'
 import { RenderCropModal } from './components/RenderCropModal'
-import { GridLineLayer, MeasurementGuides, UtilityLineLayer, AmpPrompt } from './components/GridOverlays'
+import { GridLineLayer, MeasurementGuides, UtilityLineLayer, MarkerPrompt } from './components/GridOverlays'
 import { SideLabel } from './components/SideLabel'
 import {
   createCroppedImageDataUrl,
@@ -269,7 +269,7 @@ function getGridMarkerDisplayLabel(type: MarkerType) {
     case '480v_three_phase':
       return '480 V 3P'
     case 'wifi':
-      return 'WiFi'
+      return 'Internet'
     case 'hanging_sign':
       return 'Hanging'
     case 'custom_drop':
@@ -601,7 +601,7 @@ function App() {
       x: coords.x,
       y: coords.y,
       amps: getDefaultAmp(planner.selectedTool),
-      speed: planner.selectedTool === 'wifi' ? 'Standard' : undefined,
+      speed: planner.selectedTool === 'wifi' ? '' : undefined,
       is24Hour: false,
       hangingSignHeight: planner.selectedTool === 'hanging_sign' ? '' : undefined,
       isRotating: false,
@@ -612,7 +612,11 @@ function App() {
     setSelectedMarkerId(nextMarker.id)
     setSelectedLineId(null)
     setOpenPanelSectionId('selected-item')
-    setAmpPromptMarkerId(isElectrical(nextMarker.type) ? nextMarker.id : null)
+    setAmpPromptMarkerId(
+      isElectrical(nextMarker.type) || nextMarker.type === 'wifi' || nextMarker.type === 'hanging_sign'
+        ? nextMarker.id
+        : null,
+    )
   }
 
   function completeLine(clientX: number, clientY: number) {
@@ -978,8 +982,9 @@ function App() {
               />
             )}
             <GridLineLayer booth={planner.booth} />
-            <div className="grid-measure grid-measure-width">{planner.booth.width} ft</div>
-            <div className="grid-measure grid-measure-depth">{planner.booth.depth} ft</div>
+            <div className="grid-size-label">
+              {planner.booth.width} ft × {planner.booth.depth} ft
+            </div>
             <UtilityLineLayer
               booth={planner.booth}
               markers={planner.markers}
@@ -1050,7 +1055,12 @@ function App() {
                     setSelectedMarkerId(marker.id)
                     setSelectedLineId(null)
                     setOpenPanelSectionId('selected-item')
-                    setAmpPromptMarkerId(null)
+                    // Open the marker prompt for power, internet, and hanging sign.
+                    setAmpPromptMarkerId(
+                      isElectrical(marker.type) || marker.type === 'wifi' || marker.type === 'hanging_sign'
+                        ? marker.id
+                        : null,
+                    )
                     setDraggingId(marker.id)
                   }}
                 >
@@ -1138,21 +1148,6 @@ function App() {
                 </React.Fragment>
               )
             })}
-            {ampPromptMarkerId &&
-              planner.markers
-                .filter((marker) => marker.id === ampPromptMarkerId && isElectrical(marker.type))
-                .map((marker) => (
-                  <AmpPrompt
-                    key={`amp-prompt-${marker.id}`}
-                    marker={marker}
-                    booth={planner.booth}
-                    onSelect={(amps) => {
-                      updateMarker(marker.id, { amps })
-                      setAmpPromptMarkerId(null)
-                    }}
-                    onClose={() => setAmpPromptMarkerId(null)}
-                  />
-                ))}
             <p className="grid-helper-text">Grid: 1 ft squares. Placement snaps to 0.5 ft.</p>
           </div>
         </div>
@@ -1226,6 +1221,35 @@ function App() {
           onCancel={() => setCropRequest(null)}
         />
       )}
+
+      {/* MarkerPrompt rendered here — outside the transformed booth-grid — so it
+          is never trapped in a CSS transform stacking context. Viewport
+          coordinates are derived from the grid's bounding rect. */}
+      {(() => {
+        if (!ampPromptMarkerId) return null
+        const marker = planner.markers.find(
+          (m) =>
+            m.id === ampPromptMarkerId &&
+            (isElectrical(m.type) || m.type === 'wifi' || m.type === 'hanging_sign'),
+        )
+        if (!marker) return null
+        const gridRect = gridRef.current?.getBoundingClientRect()
+        if (!gridRect) return null
+        const screenX = gridRect.left + (marker.x / planner.booth.width) * gridRect.width
+        const screenY =
+          gridRect.top +
+          ((planner.booth.depth - marker.y) / planner.booth.depth) * gridRect.height
+        return (
+          <MarkerPrompt
+            key={`marker-prompt-${marker.id}`}
+            marker={marker}
+            screenX={screenX}
+            screenY={screenY}
+            onSave={(patch) => updateMarker(marker.id, patch)}
+            onClose={() => setAmpPromptMarkerId(null)}
+          />
+        )
+      })()}
     </main>
   )
 }
