@@ -128,8 +128,8 @@ const defaultBooth: BoothDetails = {
   showName: '',
   showDate: '',
   showLocation: '',
-  width: 20,
-  depth: 20,
+  width: 10,
+  depth: 10,
   boothType: 'Inline',
   flooring: DEFAULT_FLOORING,
   sideLabels: {
@@ -319,8 +319,8 @@ function readInitialState(): PlannerState {
         ...(line.fromMarkerId
           ? { fromMarkerId: line.fromMarkerId as string }
           : { fromLineId: line.fromLineId as string }),
-        toX: clamp(Number(line.toX) || 0, 0, parsed.booth?.width || 20),
-        toY: clamp(Number(line.toY) || 0, 0, parsed.booth?.depth || 20),
+        toX: clamp(Number(line.toX) || 0, 0, parsed.booth?.width || 10),
+        toY: clamp(Number(line.toY) || 0, 0, parsed.booth?.depth || 10),
         label: (line.label as string) || `L${index + 1}`,
         notes: (line.notes as string) || '',
       }))
@@ -336,8 +336,8 @@ function readInitialState(): PlannerState {
           ...defaultBooth.sideLabels,
           ...parsed.booth?.sideLabels,
         },
-        width: clamp(Number(parsed.booth?.width) || 20, 1, 100),
-        depth: clamp(Number(parsed.booth?.depth) || 20, 1, 100),
+        width: clamp(Number(parsed.booth?.width) || 10, 1, 100),
+        depth: clamp(Number(parsed.booth?.depth) || 10, 1, 100),
         boothType: BOOTH_TYPES.includes(parsed.booth?.boothType as BoothType)
           ? (parsed.booth?.boothType as BoothType)
           : 'Inline',
@@ -519,8 +519,8 @@ function App() {
   function setBooth(booth: BoothDetails) {
     const nextBooth = {
       ...booth,
-      width: clamp(Number(booth.width) || 20, 1, 100),
-      depth: clamp(Number(booth.depth) || 20, 1, 100),
+      width: clamp(Number(booth.width) || 10, 1, 100),
+      depth: clamp(Number(booth.depth) || 10, 1, 100),
     }
     setPlanner((current) => ({
       ...current,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   BOOTH_TYPES,
   FLOORING_OPTIONS,
@@ -11,45 +11,39 @@ import { TextField } from './TextField'
 
 const sourceOneLogoPath = '/SourceOne-Logo-RGB.svg'
 
-// Preset dimension options (10 ft increments from 10 to 100 ft).
-// Kept here because it is only used by the setup modal's DimensionField.
-const dimensionOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 10)
-
-function DimensionField({
+function DimensionInput({
   label,
-  mode,
   value,
-  onModeChange,
-  onValueChange,
+  onChange,
 }: {
   label: string
-  mode: string
   value: number
-  onModeChange: (mode: string) => void
-  onValueChange: (value: number) => void
+  onChange: (value: number) => void
 }) {
+  const [draft, setDraft] = useState(String(value))
+
+  // Sync draft when value changes externally (e.g. parent resets the modal).
+  useEffect(() => { setDraft(String(value)) }, [value])
+
+  function commit(raw: string) {
+    const clamped = clamp(Number(raw) || 1, 1, 100)
+    onChange(clamped)
+    setDraft(String(clamped))
+  }
+
   return (
     <label className="field-group">
       <span className="field-label">{label}</span>
-      <div className="dimension-row">
-        <select value={mode} onChange={(event) => onModeChange(event.target.value)}>
-          {dimensionOptions.map((option) => (
-            <option key={option} value={option}>
-              {option} ft
-            </option>
-          ))}
-          <option value="custom">Custom</option>
-        </select>
-        <input
-          type="number"
-          min={1}
-          max={100}
-          step={1}
-          value={value}
-          disabled={mode !== 'custom'}
-          onChange={(event) => onValueChange(clamp(Number(event.target.value) || 1, 1, 100))}
-        />
-      </div>
+      <input
+        type="number"
+        min={1}
+        max={100}
+        step={1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      />
     </label>
   )
 }
@@ -63,25 +57,8 @@ export function SetupModal({
   onChange: (booth: BoothDetails) => void
   onComplete: () => void
 }) {
-  const [widthMode, setWidthMode] = useState(
-    dimensionOptions.includes(booth.width) ? String(booth.width) : 'custom',
-  )
-  const [depthMode, setDepthMode] = useState(
-    dimensionOptions.includes(booth.depth) ? String(booth.depth) : 'custom',
-  )
-
   function updateField(field: keyof BoothDetails, value: string | number) {
     onChange({ ...booth, [field]: value })
-  }
-
-  function updateDimension(field: 'width' | 'depth', mode: string) {
-    const value = mode === 'custom' ? booth[field] : Number(mode)
-    if (field === 'width') {
-      setWidthMode(mode)
-    } else {
-      setDepthMode(mode)
-    }
-    updateField(field, clamp(Number(value) || 20, 1, 100))
   }
 
   return (
@@ -130,19 +107,15 @@ export function SetupModal({
             onChange={(value) => updateField('showLocation', value)}
           />
 
-          <DimensionField
+          <DimensionInput
             label="Booth Width"
-            mode={widthMode}
             value={booth.width}
-            onModeChange={(mode) => updateDimension('width', mode)}
-            onValueChange={(value) => updateField('width', value)}
+            onChange={(value) => updateField('width', value)}
           />
-          <DimensionField
+          <DimensionInput
             label="Booth Depth"
-            mode={depthMode}
             value={booth.depth}
-            onModeChange={(mode) => updateDimension('depth', mode)}
-            onValueChange={(value) => updateField('depth', value)}
+            onChange={(value) => updateField('depth', value)}
           />
           <label className="field-group">
             <span className="field-label">Booth Type</span>

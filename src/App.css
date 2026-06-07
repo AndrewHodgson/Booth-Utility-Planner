@@ -956,11 +956,6 @@ textarea {
   resize: vertical;
 }
 
-.dimension-row {
-  display: grid;
-  grid-template-columns: 1.25fr 0.75fr;
-  gap: 8px;
-}
 
 .coordinate-readout {
   border: 1px solid #dfe5ed;
